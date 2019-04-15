@@ -1,0 +1,5 @@
+simplex_base_model
+simplex_sdk
+jieba
+numpy
+sklearn
