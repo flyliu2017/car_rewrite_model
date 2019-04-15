@@ -13,7 +13,7 @@ setup(
     packages=find_packages(exclude=['tests*']),
     package_data={'': ['*.json']},
     package_dir={'': '.'},
-    url='https://git.aipp.io/ludezhengeigen/car_rewrite_model',
+    url='https://git.aipp.io/ludezhengeigen/car_rewirte_model.git',
     license='MIT',
     author='ludezheng',
     author_email='ludezheng@aidigger.com',
