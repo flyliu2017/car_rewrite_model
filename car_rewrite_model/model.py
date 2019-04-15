@@ -37,17 +37,14 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
 
         self.senti_label_cls_model = SimplexClient('Bert_SentiLabel_cls')  # 获取情感标签模型
         self.timeout = kwargs.get("timeout", 20)
-        self.keywords_file = kwargs.get("keywords_filepath")
-        self.car_info_file = kwargs.get("car_info_filepath")
-        self.stop_words_file = kwargs.get("stop_words_filepath")
-        self.total_comments = kwargs.get("total_comments_filepath")
-        self.vocab = kwargs.get("vocab_filepath")
-        self.keywords_table = set([line.strip() for line in open(self.keywords_file).readlines()])
-        self.car_info = set([line.strip() for line in open(self.keywords_file).readlines()])
-        self.stop_words = set([line.strip() for line in open(self.keywords_file).readlines()])
+        self.total_comments = [line.strip() for line in open(self.download(kwargs.get("total_comments_filepath"))).readlines()]
+        self.vocab = set([line.strip() for line in open(self.download(kwargs.get("vocab_filepath"))).readlines()])
+        self.keywords_table = set([line.strip() for line in open(self.download(kwargs.get("keywords_filepath"))).readlines()])
+        self.car_info = set([line.strip() for line in open(self.download(kwargs.get("car_info_filepath"))).readlines()])
+        self.stop_words = set([line.strip() for line in open(self.download(kwargs.get("stop_words_filepath"))).readlines()])
         self.stop_words.remove('一')
         self.vectorizer = TfidfVectorizer(stop_words=stop_words)
-        self.idf_features = vectorizer.fit(total_comments)
+        self.idf_features = vectorizer.fit(self.total_comments)
         self.feature_words = numpy.array(vectorizer.get_feature_names())
 
 
@@ -146,7 +143,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             rewrite_str = ''
 
             for piece in comments_pieces:
-                senti_label = '<POS>'#self.senti_label_cls_model.predict(piece)  # 获取短语的senti label
+                senti_label = self.senti_label_cls_model.predict(piece)  # 获取短语的senti label
                 key_words = self.get_comment_keywords(jieba_tokenize(piece))
                 tokens =  senti_label + ' ' + ' '.join(key_words) + ' ' + '<' + domanin + '>'
                 rewrite_tokens = self.get_tf_results(tokens)
