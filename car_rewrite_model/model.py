@@ -31,7 +31,7 @@ def jieba_tokenize(content):
     return " ".join(tokens)
 
 
-class CarRewrite_base_keywords(SimplexBaseModel):
+class CarRewriteBaseKeywords(SimplexBaseModel):
     def __init__(self, *args, **kwargs):
         super(CarRewrite_base_keywords, self).__init__(*args, **kwargs)
 
