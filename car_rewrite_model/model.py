@@ -143,7 +143,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             rewrite_str = ''
 
             for piece in comments_pieces:
-                senti_label = self.senti_label_cls_model.predict(piece)  # 获取短语的senti label
+                senti_label = self.senti_label_cls_model.predict(piece)[0]['label']  # 获取短语的senti label
                 key_words = self.get_comment_keywords(jieba_tokenize(piece))
                 tokens =  senti_label + ' ' + ' '.join(key_words) + ' ' + '<' + domanin + '>'
                 rewrite_tokens = self.get_tf_results(tokens)
