@@ -33,7 +33,7 @@ def jieba_tokenize(content):
 
 class CarRewriteBaseKeywords(SimplexBaseModel):
     def __init__(self, *args, **kwargs):
-        super(CarRewrite_base_keywords, self).__init__(*args, **kwargs)
+        super(CarRewriteBaseKeywords, self).__init__(*args, **kwargs)
 
         self.senti_label_cls_model = SimplexClient('BertCarSentiCls')  # 获取情感标签模型
         self.timeout = kwargs.get("timeout", 20)
