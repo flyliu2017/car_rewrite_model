@@ -15,22 +15,6 @@ partten = re.compile(r'[.a-zA-Z|零|一|二|三|四|五|六|七|八|九|十|百|
 digits = re.compile(r'[\d\.]+|[零一二两三四五六七八九十百千万]*')
 
 
-def jieba_tokenize(content):
-    tokens = []
-    for word in jieba.cut(content.strip()):
-        word = word.strip()
-        if word == '':
-            continue
-        (b, e) = digits.match(word).span()
-        if e != 0 and word not in self.stop_words:
-            for d in word[:e]:
-                tokens.append(d)
-            tokens.append(word[e:])
-        else:
-            tokens.append(word)
-    return " ".join(tokens)
-
-
 class CarRewriteBaseKeywords(SimplexBaseModel):
     def __init__(self, *args, **kwargs):
         super(CarRewriteBaseKeywords, self).__init__(*args, **kwargs)
@@ -46,7 +30,21 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         self.idf_features = self.vectorizer.fit(self.total_comments)
         self.feature_words = numpy.array(self.vectorizer.get_feature_names())
 
-
+    def tokenize(content):
+        tokens = []
+        for word in jieba.cut(content.strip()):
+            word = word.strip()
+            if word == '':
+                continue
+            (b, e) = digits.match(word).span()
+            if e != 0 and word not in self.stop_words:
+                for d in word[:e]:
+                    tokens.append(d)
+                tokens.append(word[e:])
+            else:
+                tokens.append(word)
+        return " ".join(tokens)
+    
     def get_tf_results(self, tokens):
         tokens = tokens.split()
         tf_data = {
@@ -144,7 +142,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
 
             for piece in comments_pieces:
                 senti_label = self.senti_label_cls_model.predict([{'content': piece}])[0]['label']  # 获取短语的senti label
-                key_words = self.get_comment_keywords(jieba_tokenize(piece))
+                key_words = self.get_comment_keywords(self.tokenize(piece))
                 tokens =  senti_label + ' ' + ' '.join(key_words) + ' ' + '<' + domanin + '>'
                 rewrite_tokens = self.get_tf_results(tokens)
                 rewrite_str += ''.join(rewrite_tokens)
