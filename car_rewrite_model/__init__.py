@@ -1,1 +1,1 @@
-from car_rewrite_model.model import CarRewrite
+from car_rewrite_model.model import CarRewriteBaseKeywords
