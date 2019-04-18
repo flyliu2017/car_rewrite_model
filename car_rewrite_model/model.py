@@ -64,8 +64,8 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         if ret is None:
             return []
 
-        ret_tokens = ret['predictions']['tokens'][0]
-        ret_tokens_len = ret['predictions']['length'][0]
+        ret_tokens = ret['predictions'][0]['tokens'][0]
+        ret_tokens_len = ret['predictions'][0]['length'][0]
 
         return ret_tokens[:ret_tokens_len]
 
