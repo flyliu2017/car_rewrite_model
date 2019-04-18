@@ -49,6 +49,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
 
 
     def get_tf_results(self, tokens):
+        tokens = tokens.split()
         tf_data = {
             "signature_name": "serving_default",
             "instances": [{
@@ -64,7 +65,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             ret = None
 
         if ret is None:
-            return ''
+            return []
 
         ret_tokens = ret['predictions']['tokens'][0]
         ret_tokens_len = ret['predictions']['length'][0]
