@@ -7,7 +7,7 @@ from car_rewrite_model.model import CarRewriteBaseKeywords
 class TestDemo(unittest.TestCase):
 
     def test_model(self):
-        CarRewriteBaseKeywords.get_tf_results = MagicMock(return_value = )
+        CarRewriteBaseKeywords.get_tf_results = MagicMock(return_value = ['改', '写', '结', '果'])
         total_comments_filepath = 'oss://modelzoo/dev/ludezheng/total_comments.txt'
         vocab_filepath = 'oss://modelzoo/dev/ludezheng/vocab_jieba.txt'
         keywords_filepath = 'oss://modelzoo/dev/ludezheng/keywords_table.txt'
