@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 reqs = [
     'simplex_sdk',
-    'simplex_base_model'
-    'jieba'
-    'numpy'
+    'simplex_base_model',
+    'jieba',
+    'numpy',
     'sklearn'
 ]
 
