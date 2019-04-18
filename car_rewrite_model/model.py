@@ -30,7 +30,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         self.idf_features = self.vectorizer.fit(self.total_comments)
         self.feature_words = numpy.array(self.vectorizer.get_feature_names())
 
-    def tokenize(content):
+    def tokenize(self, content):
         tokens = []
         for word in jieba.cut(content.strip()):
             word = word.strip()
