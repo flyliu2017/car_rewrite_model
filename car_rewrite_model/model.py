@@ -72,27 +72,27 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         return ret_tokens[:ret_tokens_len]
 
 
-    def get_comments_pieces(self, comments):
-        if len(comments) < 55:
-            return [comments]
+    def get_comments_pieces(self, comment):
+        if len(comment) < 55:
+            return [comment]
 
-        comments_pieces = []
-        length = len(comments) // (len(comments) // 55 + 1)
-        pieces = re.split('[,，。?！!？]', connect)
+        comment_pieces = []
+        length = len(comment) // (len(comment) // 55 + 1)
+        pieces = re.split('[,，。?！!？]', comment)
         part = ''
 
         for piece in pieces:
             if len(part) >= length:
-                comments_pieces.append(part[:-1])
+                comment_pieces.append(part[:-1])
                 part = ''
             if piece == '': continue
             part += piece
             part += '，'
 
         if len(part) > 1:
-            comments_pieces.append(part[:-1])
+            comment_pieces.append(part[:-1])
 
-        return comments_pieces
+        return comment_pieces
 
 
     def get_comment_keywords(self, comment):
