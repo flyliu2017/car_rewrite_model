@@ -44,7 +44,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         self.stop_words = set([line.strip() for line in open(self.download(kwargs.get("stop_words_filepath"))).readlines()])
         self.vectorizer = TfidfVectorizer(stop_words=self.stop_words)
         self.idf_features = vectorizer.fit(self.total_comments)
-        self.feature_words = numpy.array(vectorizer.get_feature_names())
+        self.feature_words = numpy.array(self.vectorizer.get_feature_names())
 
 
     def get_tf_results(self, tokens):
