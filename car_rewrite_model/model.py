@@ -35,7 +35,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
     def __init__(self, *args, **kwargs):
         super(CarRewrite_base_keywords, self).__init__(*args, **kwargs)
 
-        self.senti_label_cls_model = SimplexClient('Bert_SentiLabel_cls')  # 获取情感标签模型
+        self.senti_label_cls_model = SimplexClient('BertCarSentiCls')  # 获取情感标签模型
         self.timeout = kwargs.get("timeout", 20)
         self.total_comments = [line.strip() for line in open(self.download(kwargs.get("total_comments_filepath"))).readlines()]
         self.vocab = set([line.strip() for line in open(self.download(kwargs.get("vocab_filepath"))).readlines()])
