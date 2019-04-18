@@ -96,7 +96,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
     def get_comment_keywords(self, comment):
         key_words = []
         length = len(comment.split())
-        tt = self.idf_features.transform(comment).toarray()
+        tt = self.idf_features.transform([comment]).toarray()
         cur_key = self.feature_words[numpy.argsort(tt).flatten()[::-1].tolist()][:length // 7 + 1]
         comment_split = re.split('[,，。?！!？]', comment)
         for sent in comment_split:
