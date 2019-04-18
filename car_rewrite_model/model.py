@@ -22,7 +22,7 @@ def jieba_tokenize(content):
         if word == '':
             continue
         (b, e) = digits.match(word).span()
-        if e != 0 and word not in stop_words:
+        if e != 0 and word not in self.stop_words:
             for d in word[:e]:
                 tokens.append(d)
             tokens.append(word[e:])
