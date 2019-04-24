@@ -45,7 +45,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
                 tokens.append(word)
         return " ".join(tokens)
     
-    def get_tf_results(self, tokens, lengths, max_len):
+    def get_tf_results(self, tokens_li, lengths, max_len):
         # tokens = tokens.split()
         # tf_data = {
         #     "signature_name": "serving_default",
