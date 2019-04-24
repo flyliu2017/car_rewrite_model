@@ -45,14 +45,18 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
                 tokens.append(word)
         return " ".join(tokens)
     
-    def get_tf_results(self, tokens):
-        tokens = tokens.split()
+    def get_tf_results(self, tokens, lengths, max_len):
+        # tokens = tokens.split()
+        # tf_data = {
+        #     "signature_name": "serving_default",
+        #     "instances": [{
+        #         "tokens": tokens,
+        #         "length": len(tokens)
+        #     }]
+        # }
         tf_data = {
             "signature_name": "serving_default",
-            "instances": [{
-                "tokens": tokens,
-                "length": len(tokens)
-            }]
+            "instances": [{"tokens": tokens.split()+['eos']*(max_len-lengths[idx]), "length": lengths[idx]} for idx, tokens in enumerate(tokens_li)]
         }
 
         try:
@@ -63,11 +67,14 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
 
         if ret is None:
             return []
+            
+        rewrite_results = [''.join(result['tokens'][0][:result['length'][0]-1]) for result in ret['predictions']]
 
-        ret_tokens = ret['predictions'][0]['tokens'][0]
-        ret_tokens_len = ret['predictions'][0]['length'][0] - 1
+        # ret_tokens = ret['predictions'][0]['tokens'][0]
+        # ret_tokens_len = ret['predictions'][0]['length'][0] - 1
 
-        return ret_tokens[:ret_tokens_len]
+        # return ret_tokens[:ret_tokens_len]
+        return rewrite_results
 
 
     def get_comments_pieces(self, comment):
@@ -140,13 +147,23 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             comments_pieces = self.get_comments_pieces(comment)
             rewrite_str = ''
 
-            for piece in comments_pieces:
-                senti_label = self.senti_label_cls_model.predict([{'content': piece}])[0]['label']  # 获取短语的senti label
-                key_words = self.get_comment_keywords(self.tokenize(piece))
-                tokens =  senti_label + ' ' + ' '.join(key_words) + ' ' + '<' + domain + '>'
-                rewrite_tokens = self.get_tf_results(tokens)
-                rewrite_str += ''.join(rewrite_tokens)
-                rewrite_str += '，'
-            results.append({'id': id, 'rewrite_content': rewrite_str[:-1]})
+            ret = self.senti_label_cls_model.predict([{'content':piece} for piece in comments_pieces])
+            keywords_li = [self.get_comment_keywords(self.tokenize(piece)) for piece in comments_pieces]
+            tokens_li = [senti_label['label'] + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label in enumerate(ret)]
+            lengths = [len(tokens.strip().split()) for tokens in tokens_li]
+            max_len = max(lengths)
+            
+            rewrite_results = self.get_tf_results(tokens_li, lengths, max_len)
+            rewrite_str += '，'.join(rewrite_results)
+            results.append({'id': id, 'rewrite_content': rewrite_str})
+
+            # for piece in comments_pieces:
+            #     senti_label = self.senti_label_cls_model.predict([{'content': piece}])[0]['label']  # 获取短语的senti label
+            #     key_words = self.get_comment_keywords(self.tokenize(piece))
+            #     tokens =  senti_label + ' ' + ' '.join(key_words) + ' ' + '<' + domain + '>'
+            #     rewrite_tokens = self.get_tf_results(tokens)
+            #     rewrite_str += ''.join(rewrite_tokens)
+            #     rewrite_str += '，'
+            # results.append({'id': id, 'rewrite_content': rewrite_str[:-1]})
 
         return results
