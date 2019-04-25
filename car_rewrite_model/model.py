@@ -83,7 +83,8 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
 
         comment_pieces = []
         length = len(comment) // (len(comment) // 55 + 1)
-        pieces = re.split('[,，。?！!？]', comment)
+        # pieces = re.split('[,，。?！!？]', comment)
+        pieces = re.findall(u'.*?[！|,|，|。|...|？|?|!|；|~|～|。|：：]+', comment)
         part = ''
 
         for piece in pieces:
