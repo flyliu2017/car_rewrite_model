@@ -154,7 +154,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             max_len = max(lengths)
             
             rewrite_results = self.get_tf_results(tokens_li, lengths, max_len)
-            rewrite_str += '，'.join(rewrite_results)
+            rewrite_str += ' '.join(rewrite_results)
             results.append({'id': id, 'rewrite_content': rewrite_str})
 
             # for piece in comments_pieces:
