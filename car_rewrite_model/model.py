@@ -66,7 +66,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             ret = None
 
         if ret is None:
-            return [[]]*len(lengths)
+            return ['']*len(lengths)
             
         rewrite_results = [''.join(result['tokens'][0][:result['length'][0]-1]) for result in ret['predictions']]
 
