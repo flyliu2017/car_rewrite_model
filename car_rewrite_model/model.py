@@ -154,7 +154,8 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             
             rewrite_str = ''
 
-            ret = self.senti_label_cls_model.predict([{'content':piece} for piece in comments_pieces if len(piece) > 0])
+            # ret = self.senti_label_cls_model.predict([{'content':piece} for piece in comments_pieces if len(piece) > 0])
+            ret = ['<POS>' for piece in comments_pieces if len(piece) > 0]
             if not ret:
                 continue
             keywords_li = [self.get_comment_keywords(self.tokenize(piece)) for piece in comments_pieces if len(piece) > 0]
