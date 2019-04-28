@@ -173,7 +173,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             max_len = max(lengths)
             
             rewrite_results = self.get_tf_results(tokens_li, lengths, max_len)
-            assert(len(rewrite_results) == len(comments_pieces))
+            # assert(len(rewrite_results) == len(comments_pieces))
             rewrite_results = [rewrite_str if '<unk>' not in rewrite_str else comments_pieces[idx]  for idx, rewrite_str in enumerate(rewrite_results)]
             rewrite_str += ' '.join(rewrite_results)
             results.append({'id': id, 'rewrite_content': rewrite_str})
