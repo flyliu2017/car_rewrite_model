@@ -78,6 +78,9 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
 
 
     def get_comments_pieces(self, comment):
+        if len(comment.strip()) == 0:
+            return []
+            
         if len(comment) < 55:
             return [comment]
 
@@ -89,14 +92,19 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
 
         for piece in pieces:
             if len(part) >= length:
-                comment_pieces.append(part[:-1])
+                # comment_pieces.append(part[:-1])
+                comment_pieces.append(part)
                 part = ''
             if piece == '': continue
             part += piece
-            part += '，'
+            # part += '，'
 
         if len(part) > 1:
-            comment_pieces.append(part[:-1])
+            # comment_pieces.append(part[:-1])
+            comment_pieces.append(part)
+            
+        if not comment_pieces:
+            return [comment]
 
         return comment_pieces
 
@@ -165,6 +173,8 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             max_len = max(lengths)
             
             rewrite_results = self.get_tf_results(tokens_li, lengths, max_len)
+            assert(len(rewrite_results) == len(comments_pieces))
+            rewrite_results = [rewrite_str if '<unk>' not in rewrite_str else comments_pieces[idx]  for idx, rewrite_str in enumerate(rewrite_results)]
             rewrite_str += ' '.join(rewrite_results)
             results.append({'id': id, 'rewrite_content': rewrite_str})
 
