@@ -200,6 +200,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         prev_sum = 0
         for i in range(batch_size):
             rewrite_str = ''
+            id = ids[i]
             domain = data_domains[i]
             content = data_contents[i]
             data_len = data_pieces_lengths[i]
