@@ -154,13 +154,13 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             
             rewrite_str = ''
 
-            # ret = self.senti_label_cls_model.predict([{'content':piece} for piece in comments_pieces if len(piece) > 0])
-            ret = ['<POS>' for piece in comments_pieces if len(piece) > 0]
+            ret = self.senti_label_cls_model.predict([{'content':piece} for piece in comments_pieces if len(piece) > 0])
+            # ret = ['<POS>' for piece in comments_pieces if len(piece) > 0]
             if not ret:
                 continue
             keywords_li = [self.get_comment_keywords(self.tokenize(piece)) for piece in comments_pieces if len(piece) > 0]
-            # tokens_li = [senti_label['label'] + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label in enumerate(ret)]
-            tokens_li = [senti_label + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label in enumerate(ret)]
+            tokens_li = [senti_label['label'] + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label in enumerate(ret)]
+            
             lengths = [len(tokens.strip().split()) for tokens in tokens_li]
             max_len = max(lengths)
             
