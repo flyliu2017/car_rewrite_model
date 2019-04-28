@@ -144,6 +144,9 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         for idx, item in enumerate(data):
             id = item['id']
             comment = item['content'].strip()
+            if not comment:
+                continue
+            
             domain = item['domain'].strip()
             comments_pieces = self.get_comments_pieces(comment)
             if not comments_pieces:
