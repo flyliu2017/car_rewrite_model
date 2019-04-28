@@ -66,7 +66,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             ret = None
 
         if ret is None:
-            return []
+            return [[]]*len(lengths)
             
         rewrite_results = [''.join(result['tokens'][0][:result['length'][0]-1]) for result in ret['predictions']]
 
@@ -95,7 +95,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
                 # comment_pieces.append(part[:-1])
                 comment_pieces.append(part)
                 part = ''
-            if piece == '': continue
+            if piece.strip() == '': continue
             part += piece
             # part += '，'
 
@@ -149,6 +149,15 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             return []
 
         results = []
+        ids = []
+        data_pieces_lengths = []
+        data_pieces = []
+        data_keywords_li = []
+        data_domains = []
+        data_contents = []
+        data_tokens_li = []
+        batch_size = len(data)
+        
         for idx, item in enumerate(data):
             id = item['id']
             comment = item['content'].strip()
@@ -160,31 +169,83 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             if not comments_pieces:
                 continue
             
-            rewrite_str = ''
-
-            ret = self.senti_label_cls_model.predict([{'content':piece} for piece in comments_pieces if len(piece) > 0])
-            # ret = ['<POS>' for piece in comments_pieces if len(piece) > 0]
-            if not ret:
-                continue
-            keywords_li = [self.get_comment_keywords(self.tokenize(piece)) for piece in comments_pieces if len(piece) > 0]
-            tokens_li = [senti_label['label'] + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label in enumerate(ret)]
+            ids.append(id)
+            data_domains.append(domain)
+            data_contents.append(comment)
+            data_pieces_lengths.append(len(comments_pieces))
+            data_pieces.extend(comments_pieces)
             
+            keywords_li = [self.get_comment_keywords(self.tokenize(piece)) for piece in comments_pieces]
+            data_keywords_li.append(keywords_li)
+        
+        ## get senti labels 
+        all_senti_labels = self.senti_label_cls_model.predict([{'content':piece} for piece in data_pieces])
+        prev_sum = 0
+        data_tokens_length = []
+        for i in range(batch_size):
+            data_len = data_pieces_lengths[i]
+            data_senti_labels = [senti_label['label'] for senti_label in all_senti_labels[prev_sum:prev_sum+data_len]]
+            prev_sum += data_len
+            keywords_li = data_keywords_li[i]
+            domain = data_domains[i]
+            
+            tokens_li = [senti_label + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label in enumerate(data_senti_labels)]
+            data_tokens_li.extend(tokens_li)
             lengths = [len(tokens.strip().split()) for tokens in tokens_li]
-            max_len = max(lengths)
+            data_tokens_length.extend(lengths)
             
-            rewrite_results = self.get_tf_results(tokens_li, lengths, max_len)
-            # assert(len(rewrite_results) == len(comments_pieces))
-            rewrite_results = [rewrite_str if '<unk>' not in rewrite_str else comments_pieces[idx]  for idx, rewrite_str in enumerate(rewrite_results)]
+        max_len = max(data_tokens_length)
+            
+        data_rewrite_results = self.get_tf_results(data_tokens_li, data_tokens_lengths, max_len)
+        prev_sum = 0
+        for i in range(batch_size):
+            rewrite_str = ''
+            domain = data_domains[i]
+            content = data_contents[i]
+            data_len = data_pieces_lengths[i]
+            rewrite_results = data_rewrite_results[prev_sum: prev_sum+data_len]
+            comments_pieces = data_pieces[prev_sum: prev_sum+data_len]
+            prev_sum += data_len
+            rewrite_results = [tmp_rewrite_str if '<unk>' not in tmp_rewrite_str else comments_pieces[idx]  for idx, tmp_rewrite_str in enumerate(rewrite_results)]
             rewrite_str += ' '.join(rewrite_results)
-            results.append({'id': id, 'rewrite_content': rewrite_str})
+            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str})
+            
+        # for idx, item in enumerate(data):
+        #     id = item['id']
+        #     comment = item['content'].strip()
+        #     if not comment:
+        #         continue
+            
+        #     domain = item['domain'].strip()
+        #     comments_pieces = self.get_comments_pieces(comment)
+        #     if not comments_pieces:
+        #         continue
+            
+        #     rewrite_str = ''
 
-            # for piece in comments_pieces:
-            #     senti_label = self.senti_label_cls_model.predict([{'content': piece}])[0]['label']  # 获取短语的senti label
-            #     key_words = self.get_comment_keywords(self.tokenize(piece))
-            #     tokens =  senti_label + ' ' + ' '.join(key_words) + ' ' + '<' + domain + '>'
-            #     rewrite_tokens = self.get_tf_results(tokens)
-            #     rewrite_str += ''.join(rewrite_tokens)
-            #     rewrite_str += '，'
-            # results.append({'id': id, 'rewrite_content': rewrite_str[:-1]})
+        #     ret = self.senti_label_cls_model.predict([{'content':piece} for piece in comments_pieces if len(piece) > 0])
+        #     # ret = ['<POS>' for piece in comments_pieces if len(piece) > 0]
+        #     if not ret:
+        #         continue
+        #     keywords_li = [self.get_comment_keywords(self.tokenize(piece)) for piece in comments_pieces if len(piece) > 0]
+        #     tokens_li = [senti_label['label'] + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label in enumerate(ret)]
+            
+        #     lengths = [len(tokens.strip().split()) for tokens in tokens_li]
+        #     max_len = max(lengths)
+            
+        #     rewrite_results = self.get_tf_results(tokens_li, lengths, max_len)
+        #     # assert(len(rewrite_results) == len(comments_pieces))
+        #     rewrite_results = [tmp_rewrite_str if '<unk>' not in tmp_rewrite_str else comments_pieces[idx]  for idx, tmp_rewrite_str in enumerate(rewrite_results)]
+        #     rewrite_str += ' '.join(rewrite_results)
+        #     results.append({'id': id, 'rewrite_content': rewrite_str})
+
+        #     # for piece in comments_pieces:
+        #     #     senti_label = self.senti_label_cls_model.predict([{'content': piece}])[0]['label']  # 获取短语的senti label
+        #     #     key_words = self.get_comment_keywords(self.tokenize(piece))
+        #     #     tokens =  senti_label + ' ' + ' '.join(key_words) + ' ' + '<' + domain + '>'
+        #     #     rewrite_tokens = self.get_tf_results(tokens)
+        #     #     rewrite_str += ''.join(rewrite_tokens)
+        #     #     rewrite_str += '，'
+        #     # results.append({'id': id, 'rewrite_content': rewrite_str[:-1]})
 
         return results
