@@ -196,7 +196,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             
         max_len = max(data_tokens_length)
             
-        data_rewrite_results = self.get_tf_results(data_tokens_li, data_tokens_lengths, max_len)
+        data_rewrite_results = self.get_tf_results(data_tokens_li, data_tokens_length, max_len)
         prev_sum = 0
         for i in range(batch_size):
             rewrite_str = ''
