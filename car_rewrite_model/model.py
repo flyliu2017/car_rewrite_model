@@ -58,9 +58,11 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             "signature_name": "serving_default",
             "instances": [{"tokens": tokens.split()+['eos']*(max_len-lengths[idx]), "length": lengths[idx]} for idx, tokens in enumerate(tokens_li)]
         }
+        
+        url = 'https://car-rewrite-base-keywords-tf.aidigger.com/v1/models/car-rewrite-base-keywords:predict'
 
         try:
-            ret = self._call_local_tf_service(tf_data, timeout=self.timeout).json()
+            ret = self._call_local_tf_service(tf_data, url=url, timeout=self.timeout).json()
         except Exception as e:
             logger.warning("# Get tf results with error: {0}".format(e))
             ret = None
