@@ -61,11 +61,13 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         
         url = 'https://car-rewrite-base-keywords-tf.aidigger.com/v1/models/car-rewrite-base-keywords:predict'
 
-        try:
-            ret = self._call_local_tf_service(tf_data, url=url, timeout=self.timeout).json()
-        except Exception as e:
-            logger.warning("# Get tf results with error: {0}".format(e))
-            ret = None
+        ret = self._call_local_tf_service(tf_data, url=url, timeout=self.timeout).json()
+        
+        # try:
+        #     ret = self._call_local_tf_service(tf_data, url=url, timeout=self.timeout).json()
+        # except Exception as e:
+        #     logger.warning("# Get tf results with error: {0}".format(e))
+        #     ret = None
 
         if ret is None:
             return ['']*len(lengths)
