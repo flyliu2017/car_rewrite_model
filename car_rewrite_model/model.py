@@ -59,18 +59,18 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             "instances": [{"tokens": tokens.split()+['eos']*(max_len-lengths[idx]), "length": lengths[idx]} for idx, tokens in enumerate(tokens_li)]
         }
         
-        url = 'https://car-rewrite-base-keywords-tf.aidigger.com/v1/models/car-rewrite-base-keywords:predict'
+        # url = 'https://car-rewrite-base-keywords-tf.aidigger.com/v1/models/car-rewrite-base-keywords:predict'
 
-        ret = self._call_local_tf_service(tf_data, url=url, timeout=self.timeout).json()
+        ret = self._call_local_tf_service(tf_data, timeout=self.timeout).json()
         
         # try:
-        #     ret = self._call_local_tf_service(tf_data, url=url, timeout=self.timeout).json()
+        #     ret = self._call_local_tf_service(tf_data, timeout=self.timeout).json()
         # except Exception as e:
         #     logger.warning("# Get tf results with error: {0}".format(e))
         #     ret = None
 
-        if ret is None:
-            return ['']*len(lengths)
+        # if ret is None:
+        #     return ['']*len(lengths)
             
         rewrite_results = [''.join(result['tokens'][0][:result['length'][0]-1]) for result in ret['predictions']]
 
