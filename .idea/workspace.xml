@@ -15,20 +15,11 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/car_rewrite_model/model.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="690">
-              <caret line="139" selection-start-line="139" selection-end-line="139" />
+            <state relative-caret-position="557">
+              <caret line="321" lean-forward="true" selection-start-line="321" selection-end-line="321" />
               <folding>
                 <element signature="e#0#14#0" expanded="true" />
               </folding>
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/car_rewrite_model/__init__.py">
-          <provider selected="true" editor-type-id="text-editor">
-            <state>
-              <caret column="57" selection-start-column="57" selection-end-column="57" />
             </state>
           </provider>
         </entry>
@@ -41,13 +32,16 @@
   <component name="IdeDocumentHistory">
     <option name="CHANGED_PATHS">
       <list>
+        <option value="$PROJECT_DIR$/car_rewrite_model/__init__.py" />
+        <option value="$PROJECT_DIR$/tests/__init__.py" />
+        <option value="$PROJECT_DIR$/tests/test_demo.py" />
         <option value="$PROJECT_DIR$/car_rewrite_model/model.py" />
       </list>
     </option>
   </component>
   <component name="ProjectFrameBounds">
-    <option name="x" value="-3" />
-    <option name="y" value="56" />
+    <option name="x" value="6" />
+    <option name="y" value="26" />
     <option name="width" value="1409" />
     <option name="height" value="803" />
   </component>
@@ -71,6 +65,11 @@
               <item name="car_rewirte_model" type="b2602c69:ProjectViewProjectNode" />
               <item name="car_rewirte_model" type="462c0819:PsiDirectoryNode" />
               <item name="car_rewrite_model" type="462c0819:PsiDirectoryNode" />
+            </path>
+            <path>
+              <item name="car_rewirte_model" type="b2602c69:ProjectViewProjectNode" />
+              <item name="car_rewirte_model" type="462c0819:PsiDirectoryNode" />
+              <item name="tests" type="462c0819:PsiDirectoryNode" />
             </path>
           </expand>
           <select />
@@ -107,7 +106,7 @@
     <servers />
   </component>
   <component name="ToolWindowManager">
-    <frame x="-3" y="56" width="1409" height="803" extended-state="0" />
+    <frame x="6" y="26" width="1409" height="803" extended-state="0" />
     <editor active="true" />
     <layout>
       <window_info id="Favorites" side_tool="true" />
@@ -133,14 +132,28 @@
     <entry file="file://$PROJECT_DIR$/car_rewrite_model/__init__.py">
       <provider selected="true" editor-type-id="text-editor">
         <state>
-          <caret column="57" selection-start-column="57" selection-end-column="57" />
+          <caret column="91" selection-start-column="91" selection-end-column="91" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/tests/__init__.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state>
+          <caret column="91" selection-start-column="91" selection-end-column="91" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/tests/test_demo.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="30">
+          <caret line="2" column="14" selection-start-line="2" selection-start-column="14" selection-end-line="2" selection-end-column="14" />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/car_rewrite_model/model.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="690">
-          <caret line="139" selection-start-line="139" selection-end-line="139" />
+        <state relative-caret-position="557">
+          <caret line="321" lean-forward="true" selection-start-line="321" selection-end-line="321" />
           <folding>
             <element signature="e#0#14#0" expanded="true" />
           </folding>

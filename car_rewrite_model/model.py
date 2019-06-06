@@ -137,7 +137,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
         # return ret_tokens[:ret_tokens_len]
         return rewrite_results
 
-    def predict(self, data, **kwargs):
+    def predict_debug(self, data, **kwargs):
         '''
         data: [{"id":int,
                 "content":string,
@@ -226,6 +226,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             prev_sum += piece_len
 
         max_len = max(data_tokens_length)
+        assert (len(data_tokens_li) == sum([piece_length for piece_length in data_pieces_lengths]))
 
         data_rewrite_results = self.get_tf_results(data_tokens_li, data_tokens_length, max_len)
 
@@ -242,6 +243,81 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             rewrite_results = [tmp_rewrite_str if '<unk>' not in tmp_rewrite_str else comments_pieces[idx] for
                                idx, tmp_rewrite_str in enumerate(rewrite_results)]
             rewrite_str += ' '.join(rewrite_results)
+            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str})
+
+        return results
+
+    def predict(self, data, **kwargs):
+        '''
+        data: [{"id":int,
+                "content":string,
+                "brand":string,
+                "series":string,
+                "spec":string,
+                "spec_name":string,
+                "domain":string
+                }, ...]
+        output: [{
+                "id":int,
+                "rewrite_content":string
+                }, ...]
+        '''
+        if data is None or len(data) == 0:
+            return []
+
+        results = []
+
+        data_ids = []
+        data_domains = []
+        data_contents = []
+        data_keywords = []
+
+        for idx, item in enumerate(data):
+            id = item['id']
+            comment = item['content'].strip()
+            if not comment:
+                continue
+
+            tokens = jieba.lcut(comment)
+            if len(tokens) < self.min_short_sen_length:
+                continue
+
+            domain = '#' + item['domain'].strip() + '#'
+            if len(tokens) > self.max_sen_length:
+                tokens = tokens[:self.max_sen_length]
+
+            data_contents.append(comment)
+
+            data_keywords.append(self.process_line(tokens, self.high_freq_tokens, self.num_unit_split_pattern))
+            data_domains.append(domain)
+            data_ids.append(id)
+
+        all_multi_tags_results = self.multi_labels_cls_model.predict([{"content": content} for content in data_contents])
+        all_multi_tags = [['__' + t_result['tag'] + '__' for t_result in pred_result['tags']] for pred_result in all_multi_tags_results]
+
+        num_data = len(data_domains)
+
+        data_tokens_li = []
+        data_tokens_length = []
+        for i in range(num_data):
+            domain = data_domains[i]
+            keywords = data_keywords[i]
+            multi_tags = all_multi_tags[i]
+
+            tokens_li = domain + ' <sep> ' + ' '.join(multi_tags[j]) + ' <sep> ' + ' '.join(keywords)
+
+            data_tokens_li.extend(tokens_li)
+            data_tokens_length.append(len(tokens_li.strip().split()))
+
+        max_len = max(data_tokens_length)
+
+        data_rewrite_results = self.get_tf_results(data_tokens_li, data_tokens_length, max_len)
+
+        for i in range(num_data):
+            id = data_ids[i]
+            domain = data_domains[i].strip('#')
+            content = data_contents[i]
+            rewrite_str = data_rewrite_results[i]
             results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str})
 
         return results
