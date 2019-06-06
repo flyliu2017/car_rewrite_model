@@ -2,7 +2,7 @@
 
 import unittest
 from unittest.mock import MagicMock, patch
-from car_rewrite_model.model import CarRewriteBaseKeywords
+from car_rewrite_model.model import CarRewriteBaseKeywords, CarRewriteBaseKeywordsNewProcess
 
 class TestDemo(unittest.TestCase):
 

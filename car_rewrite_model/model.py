@@ -15,6 +15,238 @@ partten = re.compile(r'[.a-zA-Z|零|一|二|三|四|五|六|七|八|九|十|百|
 digits = re.compile(r'[\d\.]+|[零一二两三四五六七八九十百千万]*')
 
 
+class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
+    def __init__(self, *args, **kwargs):
+        super(CarRewriteBaseKeywordsNewProcess, self).__init__(*args, **kwargs)
+
+        self.multi_labels_cls_model = SimplexClient('BertCarMultiLabelsExtractTopK')  # 获取多标签
+        self.min_short_sen_length = kwargs.get("min_short_sen_length", 1)  # 最小序列长度
+        self.max_sen_length = kwargs.get("max_sen_length", 100)  # 最大序列长度，超过进行分句
+        self.timeout = kwargs.get("timeout", 30)
+        self.vocab_file = self.download(kwargs["vocab_path"])
+        self.high_freq_token_file = self.download(kwargs["high_freq_token_path"])
+        self.token2id = {line.strip(): idx for idx, line in enumerate(open(self.vocab_file, 'r').readlines())}
+        self.eos_id = self.token2id['<eos>']
+        self.sep_id = self.token2id['<sep>']
+        self.high_freq_tokens = [line.strip() for idx, line in enumerate(open(self.high_freq_token_file, 'r').readlines())]
+        self.num_unit_split_pattern = re.compile(r'[\d\.]+|[零一二两三四五六七八九十百千万]*')
+
+    def tokenize(self, tokens):
+        token_ids = [self.token2id[token] if token in self.token2id else self.token2id['<unk>'] for token in tokens]
+        return token_ids
+
+    def cut_sens(self, content):
+        """按特殊标点符号，将长句进行切割，返回切割后的短句列表"""
+        return re.findall(u'.*?[！|。|...|？|?|!|；|~|～|。]+', content)
+
+    def do_concat_short_sens(self, short_sens):
+        concat_short_sens = []  # 将合并后字符级别的序列长度不超过max_sen_length*1.5的短句合并成一个长句
+
+        new_sen = ''
+        for short_sen in short_sens[:-1]:
+            if len(new_sen) >= int(self.max_sen_length * 1.5):
+                concat_short_sens.append(new_sen)
+                new_sen = short_sen
+            elif len(short_sen) >= (self.max_sen_length * 1.5):
+                if new_sen:
+                    concat_short_sens.append(new_sen)
+                    concat_short_sens.append(short_sen)
+                    new_sen = ''
+                else:
+                    concat_short_sens.append(short_sen)
+            else:
+                new_sen += short_sen
+
+        if new_sen:
+            if len(new_sen) >= int(self.max_sen_length * 1.5):
+                concat_short_sens.append(new_sen)
+                concat_short_sens.append(short_sens[-1])
+            else:
+                new_sen += short_sens[-1]
+                concat_short_sens.append(new_sen)
+
+        else:
+            concat_short_sens.append(short_sens[-1])
+
+        return concat_short_sens
+
+    def process_line(self, cut_tokens, high_freq_words, num_unit_split_pattern):
+        """
+        重新处理分词后的一句话的tokens，比如特殊处理数字和单位
+        cut_tokens: 切完词的tokens
+        high_freq_words: 高频词列表
+        num_unit_split_pattern:  见self.get_num_unit_split_reg_pattern()
+        """
+        new_line_tokens = []
+        for token in cut_tokens:
+            # 先判断是否是数字和单位
+            (split_b, split_e) = num_unit_split_pattern.match(
+                token).span()  # 将数字和单位连在一起的keyword进行拆分，比如"12kg" 拆分成"12", "kg"
+            if split_e != 0:
+                try:
+                    float(token[:split_e])
+                    for c in token[:split_e]:  # 把数字拆分，"12"->"1", "2"
+                        new_line_tokens.append(c)
+                except:  # 可能是"零一二两三四五六七八九十百千万"
+                    for c in token[:split_e]:
+                        new_line_tokens.append(c)
+
+                if split_e < len(token):  # 还有单位或其他字符
+                    for c in token[split_e:]:
+                        new_line_tokens.append(c)
+            else:  # 再判断是否是低频词
+                if token not in high_freq_words:
+                    for c in token:
+                        new_line_tokens.append(c)
+                else:
+                    new_line_tokens.append(token)
+
+        return new_line_tokens
+
+    def get_tf_results(self, tokens_li, lengths, max_len):
+        # tokens = tokens.split()
+        # tf_data = {
+        #     "signature_name": "serving_default",
+        #     "instances": [{
+        #         "tokens": tokens,
+        #         "length": len(tokens)
+        #     }]
+        # }
+        tf_data = {
+            "signature_name": "serving_default",
+            "instances": [{"tokens": tokens.split() + ['<eos>'] * (max_len - lengths[idx]), "length": lengths[idx]} for
+                          idx, tokens in enumerate(tokens_li)]
+        }
+
+        ret = self._call_local_tf_service(tf_data, timeout=self.timeout).json()
+
+        # try:
+        #     ret = self._call_local_tf_service(tf_data, timeout=self.timeout).json()
+        # except Exception as e:
+        #     logger.warning("# Get tf results with error: {0}".format(e))
+        #     ret = None
+
+        # if ret is None:
+        #     return ['']*len(lengths)
+
+        rewrite_results = [''.join(result['tokens'][0][:result['length'][0] - 1]) for result in ret['predictions']]
+
+        # ret_tokens = ret['predictions'][0]['tokens'][0]
+        # ret_tokens_len = ret['predictions'][0]['length'][0] - 1
+
+        # return ret_tokens[:ret_tokens_len]
+        return rewrite_results
+
+    def predict(self, data, **kwargs):
+        '''
+        data: [{"id":int,
+                "content":string,
+                "brand":string,
+                "series":string,
+                "spec":string,
+                "spec_name":string,
+                "domain":string
+                }, ...]
+        output: [{
+                "id":int,
+                "rewrite_content":string
+                }, ...]
+        '''
+        if data is None or len(data) == 0:
+            return []
+
+        results = []
+
+        data_ids = []
+        data_pieces_lengths = []
+        data_pieces_contents = []
+        data_pieces_keywords = []
+        data_domains = []
+        data_contents = []
+
+        for idx, item in enumerate(data):
+            id = item['id']
+            comment = item['content'].strip()
+            if not comment:
+                continue
+
+            tokens = jieba.lcut(comment)
+            if len(tokens) < self.min_short_sen_length:
+                continue
+
+            domain = '#' + item['domain'].strip() + '#'
+            # domain_token_id = self.token2id[domain]
+
+            if len(tokens) > self.max_sen_length:
+                short_sens = self.cut_sens(comment)
+                concat_short_sens = self.do_concat_short_sens(short_sens)
+                pieces_tokens = [jieba.lcut(short_sen) for short_sen in concat_short_sens]
+
+            else:
+                concat_short_sens = [comment]
+                pieces_tokens = [tokens]
+
+            ## 保证tokens长度不超过max_sen_length
+            pieces_keywords = [self.process_line(piece_tokens[:self.max_sen_length], self.high_freq_tokens, self.num_unit_split_pattern) for piece_tokens in pieces_tokens]
+            # pieces_keywords_ids = [self.tokenize(piece_keywords) for piece_keywords in pieces_keywords]
+
+            data_ids.append(id)
+            data_domains.append(domain)
+            data_contents.append(comment)
+            data_pieces_contents.extend(concat_short_sens)
+            data_pieces_lengths.append(len(pieces_keywords))
+            data_pieces_keywords.append(pieces_keywords)
+
+        # num_data = len(data_ids)
+        # assert(len(data_domain_ids)==num_data)
+        # assert (len(data_contents) == num_data)
+        # assert (len(data_pieces_lengths) == num_data)
+        # assert (len(data_pieces_keywords_ids) == num_data)
+
+        all_multi_tags_results = self.multi_labels_cls_model.predict([{"content": content} for content in data_pieces_contents])
+        all_multi_tags = [['__'+t_result['tag']+'__' for t_result in pred_result['tags']] for pred_result in all_multi_tags_results]
+
+        ## 构建tf_serving数据格式
+        data_tokens_li = []
+        data_tokens_length = []
+
+        num_data = len(data_ids)
+        prev_sum = 0
+
+        for i in range(num_data):
+            domain = data_domains[i]
+            pieces_keywords = data_pieces_keywords[i]
+            piece_len = data_pieces_lengths[i]
+            piece_multi_tags = [multi_tags for multi_tags in all_multi_tags[prev_sum:prev_sum + piece_len]]
+
+            pieces_tokens_li = [domain + ' <sep> ' + ' '.join(piece_multi_tags[j]) + ' <sep> ' + ' '.join(pieces_keywords[j]) for j in range(piece_len)]
+
+            data_tokens_li.extend(pieces_tokens_li)
+            data_tokens_length.extend([len(piece_tokens.strip().split()) for piece_tokens in pieces_tokens_li])
+            prev_sum += piece_len
+
+        max_len = max(data_tokens_length)
+
+        data_rewrite_results = self.get_tf_results(data_tokens_li, data_tokens_length, max_len)
+
+        prev_sum = 0
+        for i in range(num_data):
+            rewrite_str = ''
+            id = data_ids[i]
+            domain = data_domains[i].strip('#')
+            content = data_contents[i]
+            piece_len = data_pieces_lengths[i]
+            rewrite_results = data_rewrite_results[prev_sum: prev_sum + piece_len]
+            comments_pieces = data_pieces_contents[prev_sum: prev_sum + piece_len]
+            prev_sum += piece_len
+            rewrite_results = [tmp_rewrite_str if '<unk>' not in tmp_rewrite_str else comments_pieces[idx] for
+                               idx, tmp_rewrite_str in enumerate(rewrite_results)]
+            rewrite_str += ' '.join(rewrite_results)
+            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str})
+
+        return results
+
+
 class CarRewriteBaseKeywords(SimplexBaseModel):
     def __init__(self, *args, **kwargs):
         super(CarRewriteBaseKeywords, self).__init__(*args, **kwargs)
@@ -44,7 +276,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             else:
                 tokens.append(word)
         return " ".join(tokens)
-    
+
     def get_tf_results(self, tokens_li, lengths, max_len):
         # tokens = tokens.split()
         # tf_data = {
@@ -58,11 +290,11 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             "signature_name": "serving_default",
             "instances": [{"tokens": tokens.split()+['eos']*(max_len-lengths[idx]), "length": lengths[idx]} for idx, tokens in enumerate(tokens_li)]
         }
-        
+
         # url = 'https://car-rewrite-base-keywords-tf.aidigger.com/v1/models/car-rewrite-base-keywords:predict'
 
         ret = self._call_local_tf_service(tf_data, timeout=self.timeout).json()
-        
+
         # try:
         #     ret = self._call_local_tf_service(tf_data, timeout=self.timeout).json()
         # except Exception as e:
@@ -71,7 +303,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
 
         # if ret is None:
         #     return ['']*len(lengths)
-            
+
         rewrite_results = [''.join(result['tokens'][0][:result['length'][0]-1]) for result in ret['predictions']]
 
         # ret_tokens = ret['predictions'][0]['tokens'][0]
@@ -84,7 +316,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
     def get_comments_pieces(self, comment):
         if len(comment.strip()) == 0:
             return []
-            
+
         if len(comment) < 55:
             return [comment]
 
@@ -106,7 +338,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         if len(part) > 1:
             # comment_pieces.append(part[:-1])
             comment_pieces.append(part)
-            
+
         if not comment_pieces:
             return [comment]
 
@@ -161,28 +393,28 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         data_contents = []
         data_tokens_li = []
         batch_size = len(data)
-        
+
         for idx, item in enumerate(data):
             id = item['id']
             comment = item['content'].strip()
             if not comment:
                 continue
-            
+
             domain = item['domain'].strip()
             comments_pieces = self.get_comments_pieces(comment)
             if not comments_pieces:
                 continue
-            
+
             ids.append(id)
             data_domains.append(domain)
             data_contents.append(comment)
             data_pieces_lengths.append(len(comments_pieces))
             data_pieces.extend(comments_pieces)
-            
+
             keywords_li = [self.get_comment_keywords(self.tokenize(piece)) for piece in comments_pieces]
             data_keywords_li.append(keywords_li)
-        
-        ## get senti labels 
+
+        ## get senti labels
         all_senti_labels = self.senti_label_cls_model.predict([{'content':piece} for piece in data_pieces])
         prev_sum = 0
         data_tokens_length = []
@@ -192,14 +424,14 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             prev_sum += data_len
             keywords_li = data_keywords_li[i]
             domain = data_domains[i]
-            
+
             tokens_li = [senti_label + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label in enumerate(data_senti_labels)]
             data_tokens_li.extend(tokens_li)
             lengths = [len(tokens.strip().split()) for tokens in tokens_li]
             data_tokens_length.extend(lengths)
-            
+
         max_len = max(data_tokens_length)
-            
+
         data_rewrite_results = self.get_tf_results(data_tokens_li, data_tokens_length, max_len)
         prev_sum = 0
         for i in range(batch_size):
@@ -214,18 +446,18 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             rewrite_results = [tmp_rewrite_str if '<unk>' not in tmp_rewrite_str else comments_pieces[idx]  for idx, tmp_rewrite_str in enumerate(rewrite_results)]
             rewrite_str += ' '.join(rewrite_results)
             results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str})
-            
+
         # for idx, item in enumerate(data):
         #     id = item['id']
         #     comment = item['content'].strip()
         #     if not comment:
         #         continue
-            
+
         #     domain = item['domain'].strip()
         #     comments_pieces = self.get_comments_pieces(comment)
         #     if not comments_pieces:
         #         continue
-            
+
         #     rewrite_str = ''
 
         #     ret = self.senti_label_cls_model.predict([{'content':piece} for piece in comments_pieces if len(piece) > 0])
@@ -234,10 +466,10 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         #         continue
         #     keywords_li = [self.get_comment_keywords(self.tokenize(piece)) for piece in comments_pieces if len(piece) > 0]
         #     tokens_li = [senti_label['label'] + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label in enumerate(ret)]
-            
+
         #     lengths = [len(tokens.strip().split()) for tokens in tokens_li]
         #     max_len = max(lengths)
-            
+
         #     rewrite_results = self.get_tf_results(tokens_li, lengths, max_len)
         #     # assert(len(rewrite_results) == len(comments_pieces))
         #     rewrite_results = [tmp_rewrite_str if '<unk>' not in tmp_rewrite_str else comments_pieces[idx]  for idx, tmp_rewrite_str in enumerate(rewrite_results)]
