@@ -304,7 +304,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             keywords = data_keywords[i]
             multi_tags = all_multi_tags[i]
 
-            tokens_li = domain + ' <sep> ' + ' '.join(multi_tags[j]) + ' <sep> ' + ' '.join(keywords)
+            tokens_li = domain + ' <sep> ' + ' '.join(multi_tags) + ' <sep> ' + ' '.join(keywords)
 
             data_tokens_li.extend(tokens_li)
             data_tokens_length.append(len(tokens_li.strip().split()))
