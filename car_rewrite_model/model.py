@@ -37,7 +37,9 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
 
     def cut_sens(self, content):
         """按特殊标点符号，将长句进行切割，返回切割后的短句列表"""
-        return re.findall(u'.*?[！|。|...|？|?|!|；|~|～|。]+', content)
+        # return re.findall(u'.*?[！|。|...|？|?|!|；|~|～|。]+', content)
+        sens_li = re.findall(u'.*?[！|,|，|。|？|?|!|；|~|～|。|：：|#]+', content + '#')
+        return sens_li[:-1] + [sens_li[-1].rstrip('#')]
 
     def do_concat_short_sens(self, short_sens):
         concat_short_sens = []  # 将合并后字符级别的序列长度不超过max_sen_length*1.5的短句合并成一个长句
@@ -399,7 +401,9 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         comment_pieces = []
         length = len(comment) // (len(comment) // 55 + 1)
         # pieces = re.split('[,，。?！!？]', comment)
-        pieces = re.findall(u'.*?[！|,|，|。|...|？|?|!|；|~|～|。|：：]+', comment)
+        # pieces = re.findall(u'.*?[！|,|，|。|...|？|?|!|；|~|～|。|：：]+', comment)
+        sens_li = re.findall(u'.*?[！|,|，|。|？|?|!|；|~|～|。|：：|#]+', comment + '#')
+        pieces = sens_li[:-1] + [sens_li[-1].rstrip('#')]
         part = ''
 
         for piece in pieces:
