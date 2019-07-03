@@ -3,6 +3,7 @@ import random
 
 import re
 import jieba
+import json
 import numpy
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -25,12 +26,14 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
         self.timeout = kwargs.get("timeout", 30)
         self.vocab_file = self.download(kwargs["vocab_path"])
         self.keywords_file = self.download(kwargs["keywords_path"])
+        self.idf_json_file = self.download(kwargs["idf_json_path"])
         self.high_freq_token_file = self.download(kwargs["high_freq_token_path"])
         self.token2id = {line.strip(): idx for idx, line in enumerate(open(self.vocab_file, 'r').readlines())}
         self.eos_id = self.token2id['<eos>']
         self.sep_id = self.token2id['<sep>']
         self.high_freq_tokens = [line.strip() for idx, line in enumerate(open(self.high_freq_token_file, 'r').readlines())]
         self.keywords = [line.strip() for idx, line in enumerate(open(self.keywords_file, 'r').readlines())]
+        self.idf_scores_dict = json.load(open(self.idf_json_file, 'r'))
         self.num_unit_split_pattern = re.compile(r'[\d\.]+|[零一二两三四五六七八九十百千万]*')
 
     def tokenize(self, tokens):
@@ -74,7 +77,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
 
         return concat_short_sens
 
-    def extract_line_keywords(self, cut_tokens, keywords_li, word2id, num_unit_split_pattern):
+    def extract_line_keywords(self, cut_tokens, keywords_li, word2id, num_unit_split_pattern, idf_scores_dict):
         """
         抽取一句话里的关键词
         cut_tokens: 切完词的tokens
@@ -109,6 +112,25 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
                         for c in token:
                             if c in word2id:
                                 line_keywords.append(c)
+
+        if len(line_keywords) < int(len(cut_tokens) / 2):  # 关键词太少，再根据tf-idf值抽取
+            idf_scores = []  # 一句话里的token的tf基本相等，只算idf就可以，即保留一句话里的稀有词
+            topk = int(len(cut_tokens) / 3)  # 取1/3的关键词，有可能会有重复
+            for token in cut_tokens:
+                if token in idf_scores_dict:
+                    idf_scores.append(idf_scores_dict[token])
+                else:
+                    idf_scores.append(1e-8)
+
+            tokens = numpy.array(cut_tokens)
+            idf_sorting = numpy.argsort(idf_scores)[::-1]
+            topk_keywords = list(tokens[idf_sorting[:topk]])
+            for keyword in topk_keywords:
+                if keyword in word2id and keyword not in line_keywords:  # 只要在词表里并没有出现在line_keywords就当作关键词
+                    line_keywords.append(keyword)
+
+        if len(line_keywords) > int(len(cut_tokens) * 7 / 12):  # 控制line_keywords的个数
+            line_keywords = line_keywords[:int(len(cut_tokens) * 7 / 12)]
 
         return line_keywords
 
@@ -230,7 +252,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
 
             ## 保证tokens长度不超过max_sen_length
             # pieces_keywords = [self.process_line(piece_tokens[:self.max_sen_length], self.high_freq_tokens, self.num_unit_split_pattern) for piece_tokens in pieces_tokens]
-            pieces_keywords = [self.extract_line_keywords(piece_tokens[:self.max_sen_length], self.keywords, self.token2id, self.num_unit_split_pattern) for piece_tokens in pieces_tokens]
+            pieces_keywords = [self.extract_line_keywords(piece_tokens[:self.max_sen_length], self.keywords, self.token2id, self.num_unit_split_pattern, self.idf_scores_dict) for piece_tokens in pieces_tokens]
 
             # pieces_keywords_ids = [self.tokenize(piece_keywords) for piece_keywords in pieces_keywords]
 
@@ -334,7 +356,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             data_contents.append(comment)
 
             # data_keywords.append(self.process_line(tokens, self.high_freq_tokens, self.num_unit_split_pattern))
-            data_keywords.append(self.extract_line_keywords(tokens, self.keywords, self.token2id, self.num_unit_split_pattern))
+            data_keywords.append(self.extract_line_keywords(tokens, self.keywords, self.token2id, self.num_unit_split_pattern, self.idf_scores_dict))
             data_domains.append(domain)
             data_ids.append(id)
 
