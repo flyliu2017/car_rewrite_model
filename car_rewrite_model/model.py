@@ -241,11 +241,12 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             piece_len = data_pieces_lengths[i]
             rewrite_results = data_rewrite_results[prev_sum: prev_sum + piece_len]
             comments_pieces = data_pieces_contents[prev_sum: prev_sum + piece_len]
+            keywords = data_tokens_li[prev_sum: prev_sum + piece_len]  # 关键词
             prev_sum += piece_len
             rewrite_results = [tmp_rewrite_str if '<unk>' not in tmp_rewrite_str else comments_pieces[idx] for
                                idx, tmp_rewrite_str in enumerate(rewrite_results)]
             rewrite_str += ' '.join(rewrite_results)
-            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str})
+            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'keywords': keywords})
 
         return results
 
@@ -320,7 +321,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             domain = data_domains[i].strip('#')
             content = data_contents[i]
             rewrite_str = data_rewrite_results[i]
-            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str})
+            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'keywords': data_tokens_li[i]})
 
         return results
 
