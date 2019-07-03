@@ -19,7 +19,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
     def __init__(self, *args, **kwargs):
         super(CarRewriteBaseKeywordsNewProcess, self).__init__(*args, **kwargs)
 
-        self.multi_labels_cls_model = SimplexClient('BertCarMultiLabelsExtractTopKForRewrite')  # 获取多标签
+        self.multi_labels_cls_model = SimplexClient('BertCarMultiLabelsExtractTopKForRewrite', url="https://alpha-model-serving.aidigger.com/api/v1/bert-car-multi-labels-extract-top-k-for-rewrite/predict")  # 获取多标签
         self.min_short_sen_length = kwargs.get("min_short_sen_length", 1)  # 最小序列长度
         self.max_sen_length = kwargs.get("max_sen_length", 100)  # 最大序列长度，超过进行分句
         self.timeout = kwargs.get("timeout", 30)
