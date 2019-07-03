@@ -2,7 +2,6 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="39cd3742-bf6e-4a1e-9d61-4cf24c9d5764" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/car_rewrite_model/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/car_rewrite_model/model.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -16,8 +15,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/car_rewrite_model/model.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="422">
-              <caret line="323" column="59" selection-start-line="323" selection-start-column="59" selection-end-line="323" selection-end-column="59" />
+            <state relative-caret-position="419">
+              <caret line="335" column="14" selection-start-line="335" selection-start-column="14" selection-end-line="335" selection-end-column="14" />
               <folding>
                 <element signature="e#0#14#0" expanded="true" />
               </folding>
@@ -192,8 +191,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/car_rewrite_model/model.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="422">
-          <caret line="323" column="59" selection-start-line="323" selection-start-column="59" selection-end-line="323" selection-end-column="59" />
+        <state relative-caret-position="419">
+          <caret line="335" column="14" selection-start-line="335" selection-start-column="14" selection-end-line="335" selection-end-column="14" />
           <folding>
             <element signature="e#0#14#0" expanded="true" />
           </folding>

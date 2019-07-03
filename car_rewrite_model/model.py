@@ -24,11 +24,13 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
         self.max_sen_length = kwargs.get("max_sen_length", 100)  # 最大序列长度，超过进行分句
         self.timeout = kwargs.get("timeout", 30)
         self.vocab_file = self.download(kwargs["vocab_path"])
+        self.keywords_file = self.download(kwargs["keywords_path"])
         self.high_freq_token_file = self.download(kwargs["high_freq_token_path"])
         self.token2id = {line.strip(): idx for idx, line in enumerate(open(self.vocab_file, 'r').readlines())}
         self.eos_id = self.token2id['<eos>']
         self.sep_id = self.token2id['<sep>']
         self.high_freq_tokens = [line.strip() for idx, line in enumerate(open(self.high_freq_token_file, 'r').readlines())]
+        self.keywords = [line.strip() for idx, line in enumerate(open(self.keywords_file, 'r').readlines())]
         self.num_unit_split_pattern = re.compile(r'[\d\.]+|[零一二两三四五六七八九十百千万]*')
 
     def tokenize(self, tokens):
@@ -71,6 +73,44 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             concat_short_sens.append(short_sens[-1])
 
         return concat_short_sens
+
+    def extract_line_keywords(self, cut_tokens, keywords_li, word2id, num_unit_split_pattern):
+        """
+        抽取一句话里的关键词
+        cut_tokens: 切完词的tokens
+        keywords_li: 关键词词表，包含一般的关键词，数字以及数字单位
+        num_unit_split_pattern:  见self.get_num_unit_split_reg_pattern()
+        """
+        line_keywords = []
+        for token in cut_tokens:
+            if token in keywords_li:
+                line_keywords.append(token)
+            else:  # 不在关键词表里
+                # 先判断是否是数字和单位
+                (split_b, split_e) = num_unit_split_pattern.match(
+                    token).span()  # 将数字和单位连在一起的keyword进行拆分，比如"12kg" 拆分成"12", "kg"
+                if split_e != 0:
+                    try:
+                        float(token[:split_e])
+                        for c in token[:split_e]:  # 把数字拆分，"12"->"1", "2"
+                            if c in word2id:
+                                line_keywords.append(c)
+                    except:  # 可能是"零一二两三四五六七八九十百千万"
+                        for c in token[:split_e]:
+                            if c in word2id:
+                                line_keywords.append(c)
+
+                    if split_e < len(token):  # 还有单位或其他字符，并确保单位或其他字符在词表里才当作关键词
+                        for c in token[split_e:]:
+                            if c in word2id:
+                                line_keywords.append(c)
+                else:  # 再判断是否在词表里
+                    if token not in word2id:  # 不在词表，拆成字，如果字在词表里就当作关键词，否则不作为关键词
+                        for c in token:
+                            if c in word2id:
+                                line_keywords.append(c)
+
+        return line_keywords
 
     def process_line(self, cut_tokens, high_freq_words, num_unit_split_pattern):
         """
@@ -189,7 +229,9 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
                 pieces_tokens = [tokens]
 
             ## 保证tokens长度不超过max_sen_length
-            pieces_keywords = [self.process_line(piece_tokens[:self.max_sen_length], self.high_freq_tokens, self.num_unit_split_pattern) for piece_tokens in pieces_tokens]
+            # pieces_keywords = [self.process_line(piece_tokens[:self.max_sen_length], self.high_freq_tokens, self.num_unit_split_pattern) for piece_tokens in pieces_tokens]
+            pieces_keywords = [self.extract_line_keywords(piece_tokens[:self.max_sen_length], self.keywords, self.token2id, self.num_unit_split_pattern) for piece_tokens in pieces_tokens]
+
             # pieces_keywords_ids = [self.tokenize(piece_keywords) for piece_keywords in pieces_keywords]
 
             data_ids.append(id)
@@ -291,7 +333,8 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
 
             data_contents.append(comment)
 
-            data_keywords.append(self.process_line(tokens, self.high_freq_tokens, self.num_unit_split_pattern))
+            # data_keywords.append(self.process_line(tokens, self.high_freq_tokens, self.num_unit_split_pattern))
+            data_keywords.append(self.extract_line_keywords(tokens, self.keywords, self.token2id, self.num_unit_split_pattern))
             data_domains.append(domain)
             data_ids.append(id)
 
