@@ -386,7 +386,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             domain = data_domains[i].strip('#')
             content = data_contents[i]
             rewrite_str = data_rewrite_results[i]
-            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'keywords': data_tokens_li[i]})
+            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'jieba_cut': ' '.join(jieba.lcut(content)), 'keywords': data_tokens_li[i]})
 
         return results
 
