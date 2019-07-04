@@ -201,7 +201,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
         # return ret_tokens[:ret_tokens_len]
         return rewrite_results
 
-    def predict(self, data, **kwargs):
+    def predict_v2(self, data, **kwargs):
         '''
         data: [{"id":int,
                 "content":string,
@@ -314,7 +314,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
 
         return results
 
-    def predict_v1(self, data, **kwargs):
+    def predict(self, data, **kwargs):
         '''
         data: [{"id":int,
                 "content":string,
