@@ -129,8 +129,8 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
                 if keyword in word2id and keyword not in line_keywords:  # 只要在词表里并没有出现在line_keywords就当作关键词
                     line_keywords.append(keyword)
 
-        if len(line_keywords) > int(len(cut_tokens) * 7 / 12):  # 控制line_keywords的个数
-            line_keywords = line_keywords[:int(len(cut_tokens) * 7 / 12)]
+        # if len(line_keywords) > int(len(cut_tokens) * 7 / 12):  # 控制line_keywords的个数
+        #     line_keywords = line_keywords[:int(len(cut_tokens) * 7 / 12)]
 
         return line_keywords
 
