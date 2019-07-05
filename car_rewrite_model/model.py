@@ -202,7 +202,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
         # return ret_tokens[:ret_tokens_len]
         return rewrite_results
 
-    def predict_v2(self, data, **kwargs):
+    def predict(self, data, **kwargs):
         '''
         data: [{"id":int,
                 "content":string,
@@ -315,7 +315,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
 
         return results
 
-    def predict(self, data, **kwargs):
+    def predict_v1(self, data, **kwargs):
         '''
         data: [{"id":int,
                 "content":string,
@@ -387,7 +387,9 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             domain = data_domains[i].strip('#')
             content = data_contents[i]
             rewrite_str = data_rewrite_results[i]
-            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'jieba_cut': ' '.join(jieba.lcut(content)), 'keywords': data_tokens_li[i]})
+            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'keywords': data_tokens_li[i]})
+
+            # results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'jieba_cut': ' '.join(jieba.lcut(content)), 'keywords': data_tokens_li[i]})
 
         return results
 
