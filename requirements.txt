@@ -3,3 +3,4 @@ simplex_sdk
 jieba
 numpy
 sklearn
+pyltp

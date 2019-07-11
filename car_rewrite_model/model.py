@@ -6,6 +6,9 @@ import jieba
 import json
 import numpy
 from sklearn.feature_extraction.text import TfidfVectorizer
+import copy
+numpy.random.seed(6666)
+from pyltp import Postagger
 
 from simplex_base_model import SimplexBaseModel
 from simplex_sdk import SimplexClient
@@ -15,13 +18,118 @@ logger = logging.getLogger(__name__)
 partten = re.compile(r'[.a-zA-Z|零|一|二|三|四|五|六|七|八|九|十|百|千|万|号|升|尺|英尺|英寸|寸|米|牛米|吨|千米|千克|克|分|转|马|码|公里|代|里|英里|厘米|年|月|天|匹|点|几|倍|挡\d]+')
 digits = re.compile(r'[\d\.]+|[零一二两三四五六七八九十百千万]*')
 
+ignore_pos_tags = ['e', 'nl', 'nh', 'o', 'q', 'wp', 'm', 'u', 'x', 'h', 'g']
+
+
+class CarRewriteSynonymsReplace(SimplexBaseModel):
+    def __init__(self, *args, **kwargs):
+        super(CarRewriteSynonymsReplace, self).__init__(*args, **kwargs)
+
+        self.synonyms_recom_model = SimplexClient('BertMaskedLM')
+        self.min_short_sen_length = kwargs.get("min_short_sen_length", 3)  # 最小序列长度
+        self.max_sen_length = kwargs.get("max_sen_length", 100)  # 最大序列长度，超过进行分句
+        self.timeout = kwargs.get("timeout", 30)
+        self.pos_model_file = self.download(kwargs["pos_model_path"])
+        self.postagger = Postagger()
+        self.postagger.load(self.pos_model_file)
+
+    def mask_sequence(self, tokens, num_mask=1, have_masked_token_ids=[]):
+        """mask单词，返回mask单词后的字符串序列，以及被mask的单词列表"""
+        masked_tokens = []
+        masked_token_ids = []
+
+        # candidates_token_ids = numpy.random.randint(0, len(tokens), num_mask+len(ignore_pos_tags)+len(have_masked_token_ids))
+        candidates_token_ids = numpy.random.permutation(len(tokens))
+        for masked_token_id in candidates_token_ids:
+            if have_masked_token_ids and masked_token_id in have_masked_token_ids:
+                continue
+            masked_token = tokens[masked_token_id]
+            pos_tag = list(self.postagger.postag([masked_token]))[0]
+            # print('pos_tag: {}'.format(pos_tag))
+            if pos_tag in ignore_pos_tags:
+                continue
+            else:
+                masked_tokens.append(masked_token)
+                masked_token_ids.append(masked_token_id)
+                tokens[masked_token_id] = '<mask>'
+            if len(masked_tokens) == num_mask:
+                break
+
+        return ''.join(tokens), masked_tokens, masked_token_ids
+
+    def predict(self, data, **kwargs):
+        '''
+        data: [{"id":int,
+                "content":string,
+                "brand":string,
+                "series":string,
+                "spec":string,
+                "spec_name":string,
+                "domain":string
+                }, ...]
+        output: [{
+                "id":int,
+                "rewrite_content":string,
+                "masked_words": list,
+                "replaced_words": list
+                }, ...]
+        '''
+        if data is None or len(data) == 0:
+            return []
+
+        num_mask = kwargs.get("num_mask", 5)
+        results = []
+        for idx, item in enumerate(data):
+            id = item["id"]
+            domain = item["domain"]
+            scontent = item["content"]
+            tokens = jieba.lcut(scontent)
+            if len(tokens) < self.min_short_sen_length:
+                results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [], "replaced_words": []})
+                continue
+
+            i = 0
+            have_masked_token_ids = []
+            all_masked_tokens = []
+            all_synonsyms_tokens = []
+            while i < num_mask:
+                content, masked_tokens, masked_token_ids = self.mask_sequence(copy.deepcopy(tokens), num_mask=1,
+                                                                         have_masked_token_ids=have_masked_token_ids)
+                if not masked_tokens:
+                    i += 1
+                    continue
+                have_masked_token_ids.extend(masked_token_ids)
+                data = {"context": content, "maskwords": masked_tokens, "topk": 1}
+                try:
+                    ret = self.synonyms_recom_model.predict(data)
+                except:
+                    i = num_mask
+                    continue
+
+                for n, result in enumerate(ret):
+                    synonym_token = result["candidates"][0]["word"]
+                    masked_token = result["maskword"]
+                    masked_token_id = masked_token_ids[n]
+                    # print('origin_token: {}, synonym_token: {}'.format(tokens[masked_token_id], synonym_token))
+                    tokens[masked_token_id] = synonym_token
+                    all_masked_tokens.append(masked_token)
+                    all_synonsyms_tokens.append(synonym_token)
+
+                i += 1
+
+            rewrite_content = ''.join(tokens)
+
+            results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": rewrite_content, "masked_words": all_masked_tokens, "replaced_words": all_synonsyms_tokens})
+
+        return results
+
 
 class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
     def __init__(self, *args, **kwargs):
         super(CarRewriteBaseKeywordsNewProcess, self).__init__(*args, **kwargs)
 
         # self.multi_labels_cls_model = SimplexClient('BertCarMultiLabelsExtractTopKForRewrite', url="https://alpha-model-serving.aidigger.com/api/v1/car-multi-labels-extract/predict")  # 获取多标签
-        self.multi_labels_cls_model = SimplexClient('BertCarMultiLabelsExtractTopK')  # 获取多标签
+        self.multi_labels_cls_model = SimplexClient('CarMultiLabelsExtract')  # 获取多标签
         self.min_short_sen_length = kwargs.get("min_short_sen_length", 1)  # 最小序列长度
         self.max_sen_length = kwargs.get("max_sen_length", 100)  # 最大序列长度，超过进行分句
         self.timeout = kwargs.get("timeout", 30)
