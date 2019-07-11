@@ -100,11 +100,13 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
                     continue
                 have_masked_token_ids.extend(masked_token_ids)
                 data = {"context": content, "maskwords": masked_tokens, "topk": 1}
-                try:
-                    ret = self.synonyms_recom_model.predict(data)
-                except:
-                    i = num_mask
-                    continue
+
+                ret = self.synonyms_recom_model.predict(data)
+                # try:
+                #     ret = self.synonyms_recom_model.predict(data)
+                # except:
+                #     i = num_mask
+                #     continue
 
                 for n, result in enumerate(ret):
                     synonym_token = result["candidates"][0]["word"]
