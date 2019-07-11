@@ -25,7 +25,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
     def __init__(self, *args, **kwargs):
         super(CarRewriteSynonymsReplace, self).__init__(*args, **kwargs)
 
-        self.synonyms_recom_model = SimplexClient('BertMaskedLM')
+        self.synonyms_recom_model = SimplexClient('BertMaskedLM', url='https://model-serving.aidigger.com/api/v1/bert-masked-lm/predict')
         self.min_short_sen_length = kwargs.get("min_short_sen_length", 3)  # 最小序列长度
         self.max_sen_length = kwargs.get("max_sen_length", 100)  # 最大序列长度，超过进行分句
         self.timeout = kwargs.get("timeout", 30)
@@ -131,7 +131,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
         super(CarRewriteBaseKeywordsNewProcess, self).__init__(*args, **kwargs)
 
         # self.multi_labels_cls_model = SimplexClient('BertCarMultiLabelsExtractTopKForRewrite', url="https://alpha-model-serving.aidigger.com/api/v1/car-multi-labels-extract/predict")  # 获取多标签
-        self.multi_labels_cls_model = SimplexClient('CarMultiLabelsExtract')  # 获取多标签
+        self.multi_labels_cls_model = SimplexClient('CarMultiLabelsExtract', url='https://model-serving.aidigger.com/api/v1/car-multi-labels-extract/predict')  # 获取多标签
         self.min_short_sen_length = kwargs.get("min_short_sen_length", 1)  # 最小序列长度
         self.max_sen_length = kwargs.get("max_sen_length", 100)  # 最大序列长度，超过进行分句
         self.timeout = kwargs.get("timeout", 30)
