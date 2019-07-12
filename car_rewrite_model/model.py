@@ -220,7 +220,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
         return results
 
-    def predict(self, data, **kwargs):
+    def predict_v1_batch(self, data, **kwargs):
         '''
         data: [{"id":int,
                 "content":string,
@@ -333,7 +333,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
         return data_results
 
-    def predict_v2_batch(self, data, **kwargs):
+    def predict(self, data, **kwargs):
         '''
         data: [{"id":int,
                 "content":string,
