@@ -56,6 +56,8 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
             if len(masked_tokens) == num_mask:
                 break
 
+        masked_tokens = [x for _, x in sorted(zip(masked_token_ids, masked_tokens))]
+        masked_token_ids.sort()
         return ''.join(tokens), masked_tokens, masked_token_ids
 
     def mask_sequence(self, tokens, num_mask=1, have_masked_token_ids=[]):
@@ -84,6 +86,8 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
             if len(masked_tokens) == num_mask:
                 break
 
+        masked_tokens = [x for _, x in sorted(zip(masked_token_ids, masked_tokens))]
+        masked_token_ids.sort()
         return ''.join(tokens), masked_tokens, masked_token_ids
 
     def predict_v1(self, data, **kwargs):
