@@ -261,7 +261,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
             tokens = jieba.lcut(scontent)
             len_tokens = len(tokens)
-            num_mask = max(1, min(10, int(len_tokens * 0.3)))  ## 最小1，最大10
+            num_mask = max(1, min(6, int(len_tokens * 0.3)))  ## 最小1，最大6
 
             if len(tokens) < self.min_short_sen_length:
                 data_results.append(
@@ -373,7 +373,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
             tokens = jieba.lcut(scontent)
             len_tokens = len(tokens)
-            num_mask = max(1, min(10, int(len_tokens * 0.3)))  ## 最小1，最大10
+            num_mask = max(1, min(6, int(len_tokens * 0.3)))  ## 最小1，最大6
 
             if len(tokens) < self.min_short_sen_length:
                 data_results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [], "replaced_words": []})
