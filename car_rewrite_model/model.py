@@ -22,10 +22,11 @@ ignore_pos_tags = ['e', 'nl', 'nh', 'o', 'q', 'wp', 'm', 'u', 'x', 'h', 'g']
 
 
 class CarRewriteSynonymsReplace(SimplexBaseModel):
+    """调用同义词推荐模型进行汽车评论改写"""
     def __init__(self, *args, **kwargs):
         super(CarRewriteSynonymsReplace, self).__init__(*args, **kwargs)
 
-        self.synonyms_recom_model = SimplexClient('BertMaskedLM', url='https://model-serving.aidigger.com/api/v1/bert-masked-lm/predict')
+        self.synonyms_recom_model = SimplexClient('BertMaskedLM', url='https://alpha-model-serving.aidigger.com/api/v1/bert-masked-l-m-batch/predict')
         self.min_short_sen_length = kwargs.get("min_short_sen_length", 3)  # 最小序列长度
         self.max_sen_length = kwargs.get("max_sen_length", 100)  # 最大序列长度，超过进行分句
         self.timeout = kwargs.get("timeout", 30)
@@ -33,7 +34,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
         self.postagger = Postagger()
         self.postagger.load(self.pos_model_file)
 
-    def mask_sequence(self, tokens, num_mask=1, have_masked_token_ids=[]):
+    def mask_sequence_v1(self, tokens, num_mask=1, have_masked_token_ids=[]):
         """mask单词，返回mask单词后的字符串序列，以及被mask的单词列表"""
         masked_tokens = []
         masked_token_ids = []
@@ -57,7 +58,35 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
         return ''.join(tokens), masked_tokens, masked_token_ids
 
-    def predict(self, data, **kwargs):
+    def mask_sequence(self, tokens, num_mask=1, have_masked_token_ids=[]):
+        """mask单词，返回mask单词后的字符串序列，以及被mask的单词列表"""
+        masked_tokens = []
+        masked_token_ids = []
+
+        mask_margin_threshod = min(max(1, (len(tokens)-2) // num_mask - 1), 2)  # 1 或 2
+
+        prev_mask_token_idx = -1
+        for idx, token in enumerate(tokens[:-1]):  # 不mask第一个以及最后一个token
+            pos_tag = list(self.postagger.postag([token]))[0]
+            if pos_tag in ignore_pos_tags:
+                continue
+            else:
+                if idx - prev_mask_token_idx <= mask_margin_threshod:  # 和上一个mask token的间隔小于mask_margin_threshod
+                    continue
+                else:
+                    masked_token = token
+                    masked_token_id = idx
+                    masked_tokens.append(masked_token)
+                    masked_token_ids.append(masked_token_id)
+                    tokens[masked_token_id] = '<mask>'
+                    prev_mask_token_idx = idx
+
+            if len(masked_tokens) == num_mask:
+                break
+
+        return ''.join(tokens), masked_tokens, masked_token_ids
+
+    def predict_v1(self, data, **kwargs):
         '''
         data: [{"id":int,
                 "content":string,
@@ -93,7 +122,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
             all_masked_tokens = []
             all_synonsyms_tokens = []
             while i < num_mask:
-                content, masked_tokens, masked_token_ids = self.mask_sequence(copy.deepcopy(tokens), num_mask=1,
+                content, masked_tokens, masked_token_ids = self.mask_sequence_v1(copy.deepcopy(tokens), num_mask=1,
                                                                          have_masked_token_ids=have_masked_token_ids)
                 if not masked_tokens:
                     i += 1
@@ -125,8 +154,272 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
         return results
 
+    def predict_v2(self, data, **kwargs):
+        '''
+        data: [{"id":int,
+                "content":string,
+                "brand":string,
+                "series":string,
+                "spec":string,
+                "spec_name":string,
+                "domain":string
+                }, ...]
+        output: [{
+                "id":int,
+                "rewrite_content":string,
+                "masked_words": list,
+                "replaced_words": list
+                }, ...]
+        '''
+        if data is None or len(data) == 0:
+            return []
+
+        # num_mask = kwargs.get("num_mask", 5)
+        results = []
+        for idx, item in enumerate(data):
+            id = item["id"]
+            domain = item["domain"]
+            scontent = item["content"]
+            tokens = jieba.lcut(scontent)
+            len_tokens = len(tokens)
+            num_mask = max(1, min(10, int(len_tokens * 0.3)))  ## 最小1，最大10
+            if len(tokens) < self.min_short_sen_length:
+                results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [], "replaced_words": []})
+                continue
+
+            content, masked_tokens, masked_token_ids = self.mask_sequence(copy.deepcopy(tokens), num_mask=num_mask, have_masked_token_ids=[])
+
+            if not masked_tokens:
+                results.append(
+                    {"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [],
+                     "replaced_words": []})
+                continue
+
+            data = {"context": content, "maskwords": masked_tokens, "topk": 1}
+
+            all_masked_tokens = []
+            all_synonsyms_tokens = []
+            ret = self.synonyms_recom_model.predict(data)
+            for i, result in enumerate(ret):
+                synonym_token = result["candidates"][0]["word"]
+                masked_token = result["maskword"]
+                masked_token_id = masked_token_ids[i]
+                # print('origin_token: {}, synonym_token: {}'.format(tokens[masked_token_id], synonym_token))
+                tokens[masked_token_id] = synonym_token
+                all_masked_tokens.append(masked_token)
+                all_synonsyms_tokens.append(synonym_token)
+
+            rewrite_content = ''.join(tokens)
+
+            results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": rewrite_content, "masked_words": all_masked_tokens, "replaced_words": all_synonsyms_tokens})
+
+        return results
+
+    def predict(self, data, **kwargs):
+        '''
+        data: [{"id":int,
+                "content":string,
+                "brand":string,
+                "series":string,
+                "spec":string,
+                "spec_name":string,
+                "domain":string
+                }, ...]
+        output: [{
+                "id":int,
+                "rewrite_content":string,
+                "masked_words": list,
+                "replaced_words": list
+                }, ...]
+        '''
+        """支持batch，一条数据，根据长度按比例设置需要mask的tokens数目，然后每次只mask一个token，重复此操作，直到mask固定数目的tokens，最后调用同义词预测模型逐一进行token替换"""
+        if data is None or len(data) == 0:
+            return []
+
+        data_results = []
+
+        num_mask_batch_syn_model_data = []  # 存放num_mask*batch_size条数据
+        num_mask_batch_data_len = []  # 记录每一条data的num_mask
+
+        batch_ids = []
+        batch_domains = []
+        batch_scontent = []  # 原始data里的content
+
+        batch_tokens = []
+        batch_masked_token_ids = []
+        # batch_masked_tokens = []
+
+        for idx, item in enumerate(data):
+            id = item["id"]
+            domain = item["domain"]
+            scontent = item["content"]
+
+            tokens = jieba.lcut(scontent)
+            len_tokens = len(tokens)
+            num_mask = max(1, min(10, int(len_tokens * 0.3)))  ## 最小1，最大10
+
+            if len(tokens) < self.min_short_sen_length:
+                data_results.append(
+                    {"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [],
+                     "replaced_words": []})
+                continue
+
+            i = 0
+            num_mask_item_syn_model_data = []
+            have_masked_token_ids = []
+            while i < num_mask:
+                content, masked_tokens, masked_token_ids = self.mask_sequence_v1(copy.deepcopy(tokens), num_mask=1,
+                                                                          have_masked_token_ids=have_masked_token_ids)
+                if not masked_tokens:   # 如果没有找到符合条件的masked_token就跳出while循环
+                    i = num_mask
+                    continue
+
+                have_masked_token_ids.extend(masked_token_ids)
+                num_mask_item_syn_model_data.append({"context": content, "maskwords": masked_tokens})
+                i += 1
+
+            if not have_masked_token_ids:
+                data_results.append(
+                    {"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [],
+                     "replaced_words": []})
+                continue
+
+            num_mask_batch_data_len.append(len(num_mask_item_syn_model_data))
+            num_mask_batch_syn_model_data.extend(num_mask_item_syn_model_data)
+
+            batch_ids.append(id)
+            batch_domains.append(domain)
+            batch_scontent.append(scontent)
+            batch_tokens.append(tokens)
+            batch_masked_token_ids.append(have_masked_token_ids)
+
+        num_mask_batch_results = self.synonyms_recom_model.predict({"data": num_mask_batch_syn_model_data, "topk": 1})
+
+        j = 0
+        sum_perv_results_size = 0  # 记录已经处理的num_mask_batch_results列表的size
+        batch_size = len(batch_ids)  ## 注意：batch_size 不等于 num_mask_batch_syn_model_data列表的长度
+        while j < batch_size:
+            id = batch_ids[j]
+            domain = batch_domains[j]
+            scontent = batch_scontent[j]
+            tokens = batch_tokens[j]
+            masked_token_ids = batch_masked_token_ids[j]
+            num_mask_item = num_mask_batch_data_len[j]  # 不同数据的num_mask
+            assert (len(masked_token_ids) == num_mask_item)
+            num_mask_item_results = num_mask_batch_results[sum_perv_results_size: sum_perv_results_size+num_mask_item]
+
+            all_synonsyms_tokens = []
+            all_masked_tokens = []
+            for idx, results in enumerate(num_mask_item_results):
+                result = results[0]
+                synonym_token = result["candidates"][0]["word"]
+                masked_token = result["maskword"]
+                masked_token_id = masked_token_ids[idx]
+                tokens[masked_token_id] = synonym_token
+                all_synonsyms_tokens.append(synonym_token)
+                all_masked_tokens.append(masked_token)
+
+            rewrite_content = ''.join(tokens)
+            data_results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": rewrite_content,
+                                 "masked_words": all_masked_tokens, "replaced_words": all_synonsyms_tokens})
+
+            sum_perv_results_size += num_mask_item
+            j += 1
+
+        return data_results
+
+    def predict_v2_batch(self, data, **kwargs):
+        '''
+        data: [{"id":int,
+                "content":string,
+                "brand":string,
+                "series":string,
+                "spec":string,
+                "spec_name":string,
+                "domain":string
+                }, ...]
+        output: [{
+                "id":int,
+                "rewrite_content":string,
+                "masked_words": list,
+                "replaced_words": list
+                }, ...]
+        '''
+        """支持batch，一条数据，根据长度按比例同时mask一定数目的tokens，然后调用同义词预测模型同时进行tokens替换"""
+        if data is None or len(data) == 0:
+            return []
+
+        # num_mask = kwargs.get("num_mask", 5)
+        data_results = []
+
+        batch_masked_tokens = []
+        batch_masked_token_ids = []
+        batch_tokens = []
+        batch_ids = []
+        batch_domains = []
+        batch_scontent = []  # 原始data里的content
+
+        batch_syn_model_data = []
+
+        for idx, item in enumerate(data):
+            id = item["id"]
+            domain = item["domain"]
+            scontent = item["content"]
+
+            tokens = jieba.lcut(scontent)
+            len_tokens = len(tokens)
+            num_mask = max(1, min(10, int(len_tokens * 0.3)))  ## 最小1，最大10
+
+            if len(tokens) < self.min_short_sen_length:
+                data_results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [], "replaced_words": []})
+                continue
+
+            content, masked_tokens, masked_token_ids = self.mask_sequence(copy.deepcopy(tokens), num_mask=num_mask,
+                                                                          have_masked_token_ids=[])
+
+            if not masked_tokens:
+                data_results.append(
+                    {"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [],
+                     "replaced_words": []})
+                continue
+
+            batch_ids.append(id)
+            batch_domains.append(domain)
+            batch_scontent.append(scontent)
+
+            batch_tokens.append(tokens)
+
+            batch_masked_tokens.append(masked_tokens)
+            batch_masked_token_ids.append(masked_token_ids)
+            batch_syn_model_data.append({"context": content, "maskwords": masked_tokens})
+
+        batch_results = self.synonyms_recom_model.predict({"data": batch_syn_model_data, "topk": 1})
+
+        for idx, results in enumerate(batch_results):
+            id = batch_ids[idx]
+            domain = batch_domains[idx]
+            scontent = batch_scontent[idx]
+            masked_token_ids = batch_masked_token_ids[idx]
+            tokens = batch_tokens[idx]
+            masked_tokens = batch_masked_tokens[idx]
+
+            all_synonsyms_tokens = []
+            for i, result in enumerate(results):
+                synonym_token = result["candidates"][0]["word"]
+                # masked_token = result["maskword"]
+                masked_token_id = masked_token_ids[i]
+                tokens[masked_token_id] = synonym_token
+                all_synonsyms_tokens.append(synonym_token)
+
+            rewrite_content = ''.join(tokens)
+            data_results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": rewrite_content,
+                            "masked_words": masked_tokens, "replaced_words": all_synonsyms_tokens})
+
+        return data_results
+
 
 class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
+    """基于277个新标签集合训练得到的改写模型欧拉服务"""
     def __init__(self, *args, **kwargs):
         super(CarRewriteBaseKeywordsNewProcess, self).__init__(*args, **kwargs)
 
