@@ -259,9 +259,9 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
         for idx, item in enumerate(data):
             id = item["id"]
             domain = item["domain"]
-            scontent = item["content"]
+            raw_content = item["content"]
             if self.remove_colon:
-                scontent=self.remove_phrase_before_colon(scontent)
+                scontent=self.remove_phrase_before_colon(raw_content)
 
             tokens = jieba.lcut(scontent)
             len_tokens = len(tokens)
@@ -269,7 +269,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
             if len(tokens) < self.min_short_sen_length:
                 data_results.append(
-                    {"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [],
+                    {"id": id, "domain": domain, "content": raw_content, "rewrite_content": scontent, "masked_words": [],
                      "replaced_words": []})
                 continue
 
@@ -289,7 +289,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
             if not have_masked_token_ids:
                 data_results.append(
-                    {"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [],
+                    {"id": id, "domain": domain, "content": raw_content, "rewrite_content": scontent, "masked_words": [],
                      "replaced_words": []})
                 continue
 
@@ -298,7 +298,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
             batch_ids.append(id)
             batch_domains.append(domain)
-            batch_scontent.append(scontent)
+            batch_scontent.append(raw_content)
             batch_tokens.append(tokens)
             batch_masked_token_ids.append(have_masked_token_ids)
 
@@ -310,7 +310,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
         while j < batch_size:
             id = batch_ids[j]
             domain = batch_domains[j]
-            scontent = batch_scontent[j]
+            raw_content = batch_scontent[j]
             tokens = batch_tokens[j]
             masked_token_ids = batch_masked_token_ids[j]
             num_mask_item = num_mask_batch_data_len[j]  # 不同数据的num_mask
@@ -329,10 +329,10 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
                 all_masked_tokens.append(masked_token)
 
             zipped=sorted(zip(masked_token_ids,all_masked_tokens,all_synonsyms_tokens))
-            _,all_masked_tokens,all_synonsyms_tokens=zip(*zipped)
+            _,all_masked_tokens,all_synonsyms_tokens=list(zip(*zipped))
 
             rewrite_content = ''.join(tokens)
-            data_results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": rewrite_content,
+            data_results.append({"id": id, "domain": domain, "content": raw_content, "rewrite_content": rewrite_content,
                                  "masked_words": all_masked_tokens, "replaced_words": all_synonsyms_tokens})
 
             sum_perv_results_size += num_mask_item
