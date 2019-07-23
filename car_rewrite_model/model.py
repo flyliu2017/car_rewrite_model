@@ -34,6 +34,8 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
         self.pos_model_file = self.download(kwargs["pos_model_path"])
         self.postagger = Postagger()
         self.postagger.load(self.pos_model_file)
+        self.remove_colon=kwargs.get('remove_phrase_before_colon',True)
+        self.all_mask=kwargs.get('all_mask',False)
 
     def mask_sequence_v1(self, tokens, num_mask=1, have_masked_token_ids=[]):
         """mask单词，返回mask单词后的字符串序列，以及被mask的单词列表"""
@@ -220,7 +222,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
         return results
 
-    def predict_v1_batch(self, data, **kwargs):
+    def predict_one_mask(self, data, **kwargs):
         '''
         data: [{"id":int,
                 "content":string,
@@ -258,6 +260,8 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
             id = item["id"]
             domain = item["domain"]
             scontent = item["content"]
+            if self.remove_colon:
+                scontent=self.remove_phrase_before_colon(scontent)
 
             tokens = jieba.lcut(scontent)
             len_tokens = len(tokens)
@@ -333,7 +337,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
         return data_results
 
-    def predict(self, data, **kwargs):
+    def predict_all_mask(self, data, **kwargs):
         '''
         data: [{"id":int,
                 "content":string,
@@ -370,7 +374,8 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
             id = item["id"]
             domain = item["domain"]
             scontent = item["content"]
-
+            if self.remove_colon:
+                scontent=self.remove_phrase_before_colon(scontent)
             tokens = jieba.lcut(scontent)
             len_tokens = len(tokens)
             num_mask = max(1, min(6, int(len_tokens * 0.3)))  ## 最小1，最大6
@@ -421,6 +426,19 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
                             "masked_words": masked_tokens, "replaced_words": all_synonsyms_tokens})
 
         return data_results
+
+    def predict(self, data, **kwargs):
+        if self.all_mask:
+            return self.predict_all_mask(data,**kwargs)
+
+        return self.predict_one_mask(data,**kwargs)
+
+    def remove_phrase_before_colon(self, txt):
+        main = '油耗|动力|操控|舒适性|空间|外观|内饰|性价比|空调|加速|设计|行驶|底盘及悬架|座椅|乘坐空间|车内空间|悬架减震|做工车漆|高速路段|噪音控制|标准|选装|能耗|方向盘|刹车|期待的配置'.split(
+            '|')
+        suffix = '方面|设计|舒适性|平顺性|操控感|表现|配置'.split('|')
+        pattern = r'\b(({})({})?[ \t]*)[:：]'.format('|'.join(main), '|'.join(suffix))
+        return re.sub(pattern, ' ', txt)
 
 
 class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
