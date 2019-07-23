@@ -328,6 +328,9 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
                 all_synonsyms_tokens.append(synonym_token)
                 all_masked_tokens.append(masked_token)
 
+            zipped=sorted(zip(masked_token_ids,all_masked_tokens,all_synonsyms_tokens))
+            _,all_masked_tokens,all_synonsyms_tokens=zip(*zipped)
+
             rewrite_content = ''.join(tokens)
             data_results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": rewrite_content,
                                  "masked_words": all_masked_tokens, "replaced_words": all_synonsyms_tokens})
