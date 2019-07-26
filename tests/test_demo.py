@@ -23,8 +23,8 @@ class TestDemo(unittest.TestCase):
         # self.assertEqual(ret, 'hello')
 
     def test_car_rewirte_synonyms_replace(self):
-        pos_model = '/data/share/liuchang/car_articles/pos.model'
-        # pos_model = 'oss://modelzoo/dev/pos_model_for_car_rewrite/pos.model'
+        # pos_model = '/data/share/liuchang/car_articles/pos.model'
+        pos_model = 'oss://modelzoo/dev/pos_model_for_car_rewrite/pos.model'
         model = CarRewriteSynonymsReplace(pos_model_path=pos_model,all_mask=True)
         l = [{'maskword': '性能',
               'candidates': [{'word': '<unk>', 'confidence': 1},
