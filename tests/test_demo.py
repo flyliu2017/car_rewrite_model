@@ -23,25 +23,25 @@ class TestDemo(unittest.TestCase):
         # self.assertEqual(ret, 'hello')
 
     def test_car_rewirte_synonyms_replace(self):
-        # pos_model = '/data/share/liuchang/car_articles/pos.model'
-        pos_model = 'oss://modelzoo/dev/pos_model_for_car_rewrite/pos.model'
-        model = CarRewriteSynonymsReplace(pos_model_path=pos_model)
-        l = [{'maskword': '面包车',
+        pos_model = '/data/share/liuchang/car_articles/pos.model'
+        # pos_model = 'oss://modelzoo/dev/pos_model_for_car_rewrite/pos.model'
+        model = CarRewriteSynonymsReplace(pos_model_path=pos_model,all_mask=True)
+        l = [{'maskword': '性能',
               'candidates': [{'word': '<unk>', 'confidence': 1},
                              {'word': '<unk>', 'confidence': 1},
                              {'word': '<unk>', 'confidence': 1},
                              {'word': '<unk>', 'confidence': 1},
                              {'word': '<unk>', 'confidence': 1}]},
-             {'maskword': '减速带',
+             {'maskword': '外观',
               'candidates': [{'word': '<unk>', 'confidence': 1},
                              {'word': '<unk>', 'confidence': 1},
                              {'word': '<unk>', 'confidence': 1},
                              {'word': '<unk>', 'confidence': 1},
                              {'word': '<unk>', 'confidence': 1}]}]
-        return_list = [l] * 3
+        data_size = 3
+        return_list = [l] * data_size
         model.synonyms_recom_model.predict = MagicMock(return_value=return_list)
 
-        data_size = 3
         test_data = [
             {'id': 1,
              'content': '驾驶性能超好，还真别说，会开车的，开着瑞虎7操控感觉肯定也不错，'
