@@ -16,7 +16,7 @@ from simplex_sdk import SimplexClient
 logger = logging.getLogger(__name__)
 
 partten = re.compile(r'[.a-zA-Z|零|一|二|三|四|五|六|七|八|九|十|百|千|万|号|升|尺|英尺|英寸|寸|米|牛米|吨|千米|千克|克|分|转|马|码|公里|代|里|英里|厘米|年|月|天|匹|点|几|倍|挡\d]+')
-digits = re.compile(r'[\d\.]+|[零一二两三四五六七八九十百千万]*')
+digits = re.compile(r'[\d.]+|[零一二两三四五六七八九十百千万]*')
 
 ignore_pos_tags = ['e', 'nl', 'nh', 'o', 'q', 'wp', 'm', 'u', 'x', 'h', 'g']
 
@@ -35,6 +35,11 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
         self.postagger = Postagger()
         self.postagger.load(self.pos_model_file)
         self.remove_colon=kwargs.get('remove_phrase_before_colon',True)
+        if self.remove_colon:
+            with open(self.download(kwargs['phrases_before_colon']), 'r', encoding='utf8') as f:
+                words = f.readlines()
+                words = [ n.strip() for n in words ]
+            self.pattern=r'\b(({})[ \t]*)[:：]'.format('|'.join(words))
         self.all_mask=kwargs.get('all_mask',False)
 
     def mask_sequence_v1(self, tokens, num_mask=1, have_masked_token_ids=[]):
@@ -260,8 +265,9 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
             id = item["id"]
             domain = item["domain"]
             raw_content = item["content"]
+            scontent=raw_content
             if self.remove_colon:
-                scontent=self.remove_phrase_before_colon(raw_content)
+                scontent=re.sub(self.pattern,'',raw_content)
 
             tokens = jieba.lcut(scontent)
             len_tokens = len(tokens)
@@ -376,15 +382,16 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
         for idx, item in enumerate(data):
             id = item["id"]
             domain = item["domain"]
-            scontent = item["content"]
+            raw_content = item["content"]
+            scontent=raw_content
             if self.remove_colon:
-                scontent=self.remove_phrase_before_colon(scontent)
+                scontent=re.sub(self.pattern,'',raw_content)
             tokens = jieba.lcut(scontent)
             len_tokens = len(tokens)
             num_mask = max(1, min(6, int(len_tokens * 0.3)))  ## 最小1，最大6
 
             if len(tokens) < self.min_short_sen_length:
-                data_results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [], "replaced_words": []})
+                data_results.append({"id": id, "domain": domain, "content": raw_content, "rewrite_content": scontent, "masked_words": [], "replaced_words": []})
                 continue
 
             content, masked_tokens, masked_token_ids = self.mask_sequence(copy.deepcopy(tokens), num_mask=num_mask,
@@ -392,13 +399,13 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
             if not masked_tokens:
                 data_results.append(
-                    {"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [],
+                    {"id": id, "domain": domain, "content": raw_content, "rewrite_content": scontent, "masked_words": [],
                      "replaced_words": []})
                 continue
 
             batch_ids.append(id)
             batch_domains.append(domain)
-            batch_scontent.append(scontent)
+            batch_scontent.append(raw_content)
 
             batch_tokens.append(tokens)
 
@@ -411,7 +418,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
         for idx, results in enumerate(batch_results):
             id = batch_ids[idx]
             domain = batch_domains[idx]
-            scontent = batch_scontent[idx]
+            raw_content = batch_scontent[idx]
             masked_token_ids = batch_masked_token_ids[idx]
             tokens = batch_tokens[idx]
             masked_tokens = batch_masked_tokens[idx]
@@ -425,7 +432,7 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
                 all_synonsyms_tokens.append(synonym_token)
 
             rewrite_content = ''.join(tokens)
-            data_results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": rewrite_content,
+            data_results.append({"id": id, "domain": domain, "content": raw_content, "rewrite_content": rewrite_content,
                             "masked_words": masked_tokens, "replaced_words": all_synonsyms_tokens})
 
         return data_results
@@ -436,18 +443,12 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
         return self.predict_one_mask(data,**kwargs)
 
-    def remove_phrase_before_colon(self, txt):
-        main = '油耗|动力|操控|舒适性|空间|外观|内饰|性价比|空调|加速|设计|行驶|底盘及悬架|座椅|乘坐空间|车内空间|悬架减震|做工车漆|高速路段|噪音控制|标准|选装|能耗|方向盘|刹车|期待的配置'.split(
-            '|')
-        suffix = '方面|设计|舒适性|平顺性|操控感|表现|配置'.split('|')
-        pattern = r'\b(({})({})?[ \t]*)[:：]'.format('|'.join(main), '|'.join(suffix))
-        return re.sub(pattern, ' ', txt)
 
 
 class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
     """基于277个新标签集合训练得到的改写模型欧拉服务"""
-    def __init__(self, *args, **kwargs):
-        super(CarRewriteBaseKeywordsNewProcess, self).__init__(*args, **kwargs)
+    def __init__(self, words, **kwargs):
+        super(CarRewriteBaseKeywordsNewProcess, self).__init__(words, **kwargs)
 
         # self.multi_labels_cls_model = SimplexClient('BertCarMultiLabelsExtractTopKForRewrite', url="https://alpha-model-serving.aidigger.com/api/v1/car-multi-labels-extract/predict")  # 获取多标签
         self.multi_labels_cls_model = SimplexClient('CarMultiLabelsExtract', url='https://model-serving.aidigger.com/api/v1/car-multi-labels-extract/predict')  # 获取多标签
@@ -824,8 +825,8 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
 
 
 class CarRewriteBaseKeywords(SimplexBaseModel):
-    def __init__(self, *args, **kwargs):
-        super(CarRewriteBaseKeywords, self).__init__(*args, **kwargs)
+    def __init__(self, words, **kwargs):
+        super(CarRewriteBaseKeywords, self).__init__(words, **kwargs)
 
         self.senti_label_cls_model = SimplexClient('BertCarSentiCls')  # 获取情感标签模型
         self.timeout = kwargs.get("timeout", 60)

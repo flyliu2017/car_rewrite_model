@@ -22,10 +22,15 @@ class TestDemo(unittest.TestCase):
         ret = m.predict(test_data)
         # self.assertEqual(ret, 'hello')
 
-    def test_car_rewirte_synonyms_replace(self):
+    def test_car_rewrite_synonyms_replace(self):
         # pos_model = '/data/share/liuchang/car_articles/pos.model'
+        # phrases_before_colon='/data/share/liuchang/car_rewirte_compare/remove_words'
+
         pos_model = 'oss://modelzoo/dev/pos_model_for_car_rewrite/pos.model'
-        model = CarRewriteSynonymsReplace(pos_model_path=pos_model,all_mask=True)
+        phrases_before_colon='oss://modelzoo/dev/car_rewrites/phrases_before_colon'
+
+        model = CarRewriteSynonymsReplace(pos_model_path=pos_model,all_mask=True,
+                                          phrases_before_colon=phrases_before_colon)
         l = [{'maskword': '性能',
               'candidates': [{'word': '<unk>', 'confidence': 1},
                              {'word': '<unk>', 'confidence': 1},
@@ -45,7 +50,7 @@ class TestDemo(unittest.TestCase):
         test_data = [
             {'id': 1,
              'content': '驾驶性能超好，还真别说，会开车的，开着瑞虎7操控感觉肯定也不错，'
-                        '外观造型漂亮，设计不会老土，最后就是虽然加速动力欠缺，但是确实很省油',
+                        '高速路行驶：不费劲。',
              'domain': '最满意'}] * data_size
         # input = {'data': test_data, 'topk': 5}
 
