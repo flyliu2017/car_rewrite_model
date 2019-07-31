@@ -447,8 +447,8 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
 class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
     """基于277个新标签集合训练得到的改写模型欧拉服务"""
-    def __init__(self, words, **kwargs):
-        super(CarRewriteBaseKeywordsNewProcess, self).__init__(words, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super(CarRewriteBaseKeywordsNewProcess, self).__init__(*args, **kwargs)
 
         # self.multi_labels_cls_model = SimplexClient('BertCarMultiLabelsExtractTopKForRewrite', url="https://alpha-model-serving.aidigger.com/api/v1/car-multi-labels-extract/predict")  # 获取多标签
         self.multi_labels_cls_model = SimplexClient('CarMultiLabelsExtract', url='https://model-serving.aidigger.com/api/v1/car-multi-labels-extract/predict')  # 获取多标签
@@ -825,8 +825,8 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
 
 
 class CarRewriteBaseKeywords(SimplexBaseModel):
-    def __init__(self, words, **kwargs):
-        super(CarRewriteBaseKeywords, self).__init__(words, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super(CarRewriteBaseKeywords, self).__init__(*args, **kwargs)
 
         self.senti_label_cls_model = SimplexClient('BertCarSentiCls')  # 获取情感标签模型
         self.timeout = kwargs.get("timeout", 60)
