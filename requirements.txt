@@ -4,3 +4,5 @@ jieba
 numpy
 sklearn
 pyltp
+gensim
+sentencepiece

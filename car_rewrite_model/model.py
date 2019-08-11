@@ -5,42 +5,93 @@ import re
 import jieba
 import json
 import numpy
+import requests
 from sklearn.feature_extraction.text import TfidfVectorizer
 import copy
+
 numpy.random.seed(6666)
-from pyltp import Postagger
+from pyltp import Postagger,Segmentor
+from gensim.models import Word2Vec
+import sentencepiece as sp
 
 from simplex_base_model import SimplexBaseModel
 from simplex_sdk import SimplexClient
 
 logger = logging.getLogger(__name__)
 
-partten = re.compile(r'[.a-zA-Z|零|一|二|三|四|五|六|七|八|九|十|百|千|万|号|升|尺|英尺|英寸|寸|米|牛米|吨|千米|千克|克|分|转|马|码|公里|代|里|英里|厘米|年|月|天|匹|点|几|倍|挡\d]+')
-digits = re.compile(r'[\d.]+|[零一二两三四五六七八九十百千万]*')
+NUM_UNIT_PATTERN = re.compile(
+    r'[.a-zA-Z|零|一|二|三|四|五|六|七|八|九|十|百|千|万|号|升|尺|英尺|英寸|寸|米|牛米|吨|千米|千克|克|分|转|马|码|公里|代|里|英里|厘米|年|月|天|匹|点|几|倍|挡\d]+')
+NUMBER_PATTERN = re.compile(r'[\d]+(\.\d+)?|[零一二两三四五六七八九十百千万]+')
 
-ignore_pos_tags = ['e', 'nl', 'nh', 'o', 'q', 'wp', 'm', 'u', 'x', 'h', 'g']
+ENGLISH_AND_NUM_PATTERN=re.compile(r'[-\da-zA-Z.,]+')
 
+ignore_pos_tags = ['e', 'nl', 'nh', 'o', 'q', 'wp', 'm', 'u', 'x', 'h', 'g', 'n']
+
+SPM_SPACE='▁' # chr(9601)
+SPECIAL_SPACE='▊'  # chr(9610)
+SPACE_TOKEN='[space]'
 
 class CarRewriteSynonymsReplace(SimplexBaseModel):
     """调用同义词推荐模型进行汽车评论改写"""
+
     def __init__(self, *args, **kwargs):
         super(CarRewriteSynonymsReplace, self).__init__(*args, **kwargs)
 
-        # self.synonyms_recom_model = SimplexClient('BertMaskedLM', url='https://alpha-model-serving.aidigger.com/api/v1/bert-masked-l-m-batch/predict')
-        self.synonyms_recom_model = SimplexClient('BertMaskedLM', url='https://model-serving.aidigger.com/api/v1/bert-masked-l-m-batch/predict')
+        bert_url = 'https://alpha-model-serving.aidigger.com/api/v1/bert-masked-l-m-batch/predict'
+        self.synonyms_recom_model = SimplexClient('BertMaskedLMBatch',
+                                                  url=bert_url)
+
+        # w2v_path = kwargs.get('w2v_path', '/data/share/liuchang/car_articles/w2v/20epoch_cut_spm/w2v.model')
+        # self.w2v_model = Word2Vec.load(w2v_path)
+        # self.vocab = self.w2v_model.wv.vocab
+
+        w2v_embedding_topk=kwargs.get('w2v_embedding_topk',
+                                      '/data/share/liuchang/car_articles/w2v/20epoch_cut_spm/embedding_top20.json')
+        with open(w2v_embedding_topk, 'r', encoding='utf8') as f:
+            self.w2v_embedding_topk=json.load(f)
+            for word in self.w2v_embedding_topk:
+                self.w2v_embedding_topk[word]=set(self.w2v_embedding_topk[word])
+
+        spm_path = kwargs.get('spm_path', '/data/share/liuchang/comments_dayu/spm_data/car_comments-20000.model')
+        self.spm_model = sp.SentencePieceProcessor()
+        self.spm_model.load(spm_path)
+
+        seg_model = '/data/xueyou/data/ltp_data_v3.4.0/cws.model'
+        self.segmentor = Segmentor()
+        self.segmentor.load(seg_model)
+
         self.min_short_sen_length = kwargs.get("min_short_sen_length", 3)  # 最小序列长度
         self.max_sen_length = kwargs.get("max_sen_length", 100)  # 最大序列长度，超过进行分句
         self.timeout = kwargs.get("timeout", 30)
         self.pos_model_file = self.download(kwargs["pos_model_path"])
         self.postagger = Postagger()
         self.postagger.load(self.pos_model_file)
-        self.remove_colon=kwargs.get('remove_phrase_before_colon',True)
-        if self.remove_colon:
+
+        self.remove_colon = kwargs.get('remove_phrase_before_colon', True)
+        self.change_position = kwargs.get('change_position', True)
+        if self.remove_colon or self.change_position:
             with open(self.download(kwargs['phrases_before_colon']), 'r', encoding='utf8') as f:
                 words = f.readlines()
-                words = [ n.strip() for n in words ]
-            self.pattern=r'\b(({})[ \t]*)[:：]'.format('|'.join(words))
-        self.all_mask=kwargs.get('all_mask',False)
+                words = [n.strip() for n in words]
+            self.pattern = r'\b(?:{})[ \t]*[:：]'.format('|'.join(words))
+
+        self.all_mask = kwargs.get('all_mask', False)
+
+        forbidden_output_file = kwargs.get('forbidden_output_file', None)
+        if forbidden_output_file:
+            with open(self.download(forbidden_output_file), 'r', encoding='utf8') as f:
+                forbidden_output = f.readlines()
+                self.forbidden_output = set([n.strip() for n in forbidden_output])
+        else:
+            self.forbidden_output = set()
+
+        antonym_dict_file = kwargs.get('antonym_dict_file', None)
+        if antonym_dict_file:
+            with open(self.download(antonym_dict_file), 'r', encoding='utf8') as f:
+                antonym_dict = json.load(f)
+                self.antonym_dict = {k: set(v) for k, v in antonym_dict.items()}
+        else:
+            self.antonym_dict = {}
 
     def mask_sequence_v1(self, tokens, num_mask=1, have_masked_token_ids=[]):
         """mask单词，返回mask单词后的字符串序列，以及被mask的单词列表"""
@@ -68,16 +119,18 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
         masked_token_ids.sort()
         return ''.join(tokens), masked_tokens, masked_token_ids
 
-    def mask_sequence(self, tokens, num_mask=1, have_masked_token_ids=[]):
+    def mask_sequence(self, tokens, pos_list, num_mask=1, have_masked_token_ids=[]):
         """mask单词，返回mask单词后的字符串序列，以及被mask的单词列表"""
         masked_tokens = []
         masked_token_ids = []
+        masked_tokens_pos = []
 
-        mask_margin_threshod = min(max(1, (len(tokens)-2) // num_mask - 1), 2)  # 1 或 2
+        mask_margin_threshod = min(max(1, (len(tokens) - 2) // num_mask - 1), 2)  # 1 或 2
 
         prev_mask_token_idx = -1
-        for idx, token in enumerate(tokens[:-1]):  # 不mask第一个以及最后一个token
-            pos_tag = list(self.postagger.postag([token]))[0]
+        for idx, token in enumerate(tokens[1:-1]):  # 不mask第一个以及最后一个token
+            idx = idx + 1
+            pos_tag = pos_list[idx]
             if pos_tag in ignore_pos_tags:
                 continue
             else:
@@ -90,142 +143,48 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
                     masked_token_ids.append(masked_token_id)
                     tokens[masked_token_id] = '<mask>'
                     prev_mask_token_idx = idx
+                    masked_tokens_pos.append(pos_tag)
 
             if len(masked_tokens) == num_mask:
                 break
 
         masked_tokens = [x for _, x in sorted(zip(masked_token_ids, masked_tokens))]
         masked_token_ids.sort()
-        return ''.join(tokens), masked_tokens, masked_token_ids
+        return ''.join(tokens), masked_tokens, masked_token_ids, masked_tokens_pos
 
-    def predict_v1(self, data, **kwargs):
-        '''
-        data: [{"id":int,
-                "content":string,
-                "brand":string,
-                "series":string,
-                "spec":string,
-                "spec_name":string,
-                "domain":string
-                }, ...]
-        output: [{
-                "id":int,
-                "rewrite_content":string,
-                "masked_words": list,
-                "replaced_words": list
-                }, ...]
-        '''
-        if data is None or len(data) == 0:
-            return []
+    def mask_and_rewrite(self, tokens, pos_list, num_mask=1, topk=1):
+        """mask单词，返回mask单词后的字符串序列，以及被mask的单词列表"""
+        # masked_tokens = []
+        # synonsyms_tokens=[]
+        rewrite_tokens = {}
+        masked_tokens_pos = []
+        # mask_margin_threshod = min(max(1, (len(tokens) - 2) // num_mask - 1), 2)  # 1 或 2
+        mask_margin_threshod = 1
 
-        num_mask = kwargs.get("num_mask", 5)
-        results = []
-        for idx, item in enumerate(data):
-            id = item["id"]
-            domain = item["domain"]
-            scontent = item["content"]
-            tokens = jieba.lcut(scontent)
-            if len(tokens) < self.min_short_sen_length:
-                results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [], "replaced_words": []})
+        prev_mask_token_idx = -1
+        for idx, token in enumerate(tokens[:-1]):  # 不mask第一个以及最后一个token
+            pos_tag = pos_list[idx]
+            token = tokens[idx]
+            if pos_tag in ignore_pos_tags or not token.strip() or token not in self.w2v_embedding_topk \
+                    or token == SPM_SPACE or ENGLISH_AND_NUM_PATTERN.fullmatch(token)\
+                    or NUMBER_PATTERN.fullmatch(token):
                 continue
-
-            i = 0
-            have_masked_token_ids = []
-            all_masked_tokens = []
-            all_synonsyms_tokens = []
-            while i < num_mask:
-                content, masked_tokens, masked_token_ids = self.mask_sequence_v1(copy.deepcopy(tokens), num_mask=1,
-                                                                         have_masked_token_ids=have_masked_token_ids)
-                if not masked_tokens:
-                    i += 1
+            else:
+                if idx - prev_mask_token_idx <= mask_margin_threshod:  # 和上一个mask token的间隔小于mask_margin_threshod
                     continue
-                have_masked_token_ids.extend(masked_token_ids)
-                data = {"context": content, "maskwords": masked_tokens, "topk": 1}
 
-                ret = self.synonyms_recom_model.predict(data)
-                # try:
-                #     ret = self.synonyms_recom_model.predict(data)
-                # except:
-                #     i = num_mask
-                #     continue
+                masked_tokens_pos.append(pos_tag)
+                candidates = self.get_w2v_candidates(token, topk=topk)
+                if not candidates:
+                    continue
+                rewrite_tokens[token] = candidates
+                tokens[idx] = candidates[0]
+                prev_mask_token_idx = idx
 
-                for n, result in enumerate(ret):
-                    synonym_token = result["candidates"][0]["word"]
-                    masked_token = result["maskword"]
-                    masked_token_id = masked_token_ids[n]
-                    # print('origin_token: {}, synonym_token: {}'.format(tokens[masked_token_id], synonym_token))
-                    tokens[masked_token_id] = synonym_token
-                    all_masked_tokens.append(masked_token)
-                    all_synonsyms_tokens.append(synonym_token)
+            if len(rewrite_tokens) == num_mask:
+                break
 
-                i += 1
-
-            rewrite_content = ''.join(tokens)
-
-            results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": rewrite_content, "masked_words": all_masked_tokens, "replaced_words": all_synonsyms_tokens})
-
-        return results
-
-    def predict_v2(self, data, **kwargs):
-        '''
-        data: [{"id":int,
-                "content":string,
-                "brand":string,
-                "series":string,
-                "spec":string,
-                "spec_name":string,
-                "domain":string
-                }, ...]
-        output: [{
-                "id":int,
-                "rewrite_content":string,
-                "masked_words": list,
-                "replaced_words": list
-                }, ...]
-        '''
-        if data is None or len(data) == 0:
-            return []
-
-        # num_mask = kwargs.get("num_mask", 5)
-        results = []
-        for idx, item in enumerate(data):
-            id = item["id"]
-            domain = item["domain"]
-            scontent = item["content"]
-            tokens = jieba.lcut(scontent)
-            len_tokens = len(tokens)
-            num_mask = max(1, min(10, int(len_tokens * 0.3)))  ## 最小1，最大10
-            if len(tokens) < self.min_short_sen_length:
-                results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [], "replaced_words": []})
-                continue
-
-            content, masked_tokens, masked_token_ids = self.mask_sequence(copy.deepcopy(tokens), num_mask=num_mask, have_masked_token_ids=[])
-
-            if not masked_tokens:
-                results.append(
-                    {"id": id, "domain": domain, "content": scontent, "rewrite_content": scontent, "masked_words": [],
-                     "replaced_words": []})
-                continue
-
-            data = {"context": content, "maskwords": masked_tokens, "topk": 1}
-
-            all_masked_tokens = []
-            all_synonsyms_tokens = []
-            ret = self.synonyms_recom_model.predict(data)
-            for i, result in enumerate(ret):
-                synonym_token = result["candidates"][0]["word"]
-                masked_token = result["maskword"]
-                masked_token_id = masked_token_ids[i]
-                # print('origin_token: {}, synonym_token: {}'.format(tokens[masked_token_id], synonym_token))
-                tokens[masked_token_id] = synonym_token
-                all_masked_tokens.append(masked_token)
-                all_synonsyms_tokens.append(synonym_token)
-
-            rewrite_content = ''.join(tokens)
-
-            results.append({"id": id, "domain": domain, "content": scontent, "rewrite_content": rewrite_content, "masked_words": all_masked_tokens, "replaced_words": all_synonsyms_tokens})
-
-        return results
+        return ''.join(tokens), rewrite_tokens, masked_tokens_pos
 
     def predict_one_mask(self, data, **kwargs):
         '''
@@ -244,7 +203,8 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
                 "replaced_words": list
                 }, ...]
         '''
-        """支持batch，一条数据，根据长度按比例设置需要mask的tokens数目，然后每次只mask一个token，重复此操作，直到mask固定数目的tokens，最后调用同义词预测模型逐一进行token替换"""
+        """支持batch，一条数据，根据长度按比例设置需要mask的tokens数目，然后每次只mask一个token，
+            重复此操作，直到mask固定数目的tokens，最后调用同义词预测模型逐一进行token替换"""
         if data is None or len(data) == 0:
             return []
 
@@ -265,17 +225,21 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
             id = item["id"]
             domain = item["domain"]
             raw_content = item["content"]
-            scontent=raw_content
-            if self.remove_colon:
-                scontent=re.sub(self.pattern,'',raw_content)
+            scontent = raw_content
+            if self.change_position:
+                scontent = self.change_position_by_colon(scontent)
+            elif self.remove_colon:
+                scontent = re.sub(self.pattern, '', raw_content)
 
             tokens = jieba.lcut(scontent)
             len_tokens = len(tokens)
-            num_mask = max(1, min(6, int(len_tokens * 0.3)))  ## 最小1，最大6
+            num_mask = max(1, min(15, int(len_tokens * 0.3)))  ## 最小1，最大6
+            # num_mask = max(1, int(len_tokens * 0.3))
 
             if len(tokens) < self.min_short_sen_length:
                 data_results.append(
-                    {"id": id, "domain": domain, "content": raw_content, "rewrite_content": scontent, "masked_words": [],
+                    {"id": id, "domain": domain, "content": raw_content, "rewrite_content": scontent,
+                     "masked_words": [],
                      "replaced_words": []})
                 continue
 
@@ -284,8 +248,8 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
             have_masked_token_ids = []
             while i < num_mask:
                 content, masked_tokens, masked_token_ids = self.mask_sequence_v1(copy.deepcopy(tokens), num_mask=1,
-                                                                          have_masked_token_ids=have_masked_token_ids)
-                if not masked_tokens:   # 如果没有找到符合条件的masked_token就跳出while循环
+                                                                                 have_masked_token_ids=have_masked_token_ids)
+                if not masked_tokens:  # 如果没有找到符合条件的masked_token就跳出while循环
                     i = num_mask
                     continue
 
@@ -295,7 +259,8 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
 
             if not have_masked_token_ids:
                 data_results.append(
-                    {"id": id, "domain": domain, "content": raw_content, "rewrite_content": scontent, "masked_words": [],
+                    {"id": id, "domain": domain, "content": raw_content, "rewrite_content": scontent,
+                     "masked_words": [],
                      "replaced_words": []})
                 continue
 
@@ -321,21 +286,26 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
             masked_token_ids = batch_masked_token_ids[j]
             num_mask_item = num_mask_batch_data_len[j]  # 不同数据的num_mask
             assert (len(masked_token_ids) == num_mask_item)
-            num_mask_item_results = num_mask_batch_results[sum_perv_results_size: sum_perv_results_size+num_mask_item]
+            num_mask_item_results = num_mask_batch_results[sum_perv_results_size: sum_perv_results_size + num_mask_item]
 
             all_synonsyms_tokens = []
             all_masked_tokens = []
             for idx, results in enumerate(num_mask_item_results):
                 result = results[0]
-                synonym_token = result["candidates"][0]["word"]
                 masked_token = result["maskword"]
                 masked_token_id = masked_token_ids[idx]
+                if result['candidates']:
+                    synonym_token = result["candidates"][0]["word"]
+                else:
+                    synonym_token = masked_token
+                    print('No candidates for word "{}"'.format(masked_token))
+
                 tokens[masked_token_id] = synonym_token
                 all_synonsyms_tokens.append(synonym_token)
                 all_masked_tokens.append(masked_token)
 
-            zipped=sorted(zip(masked_token_ids,all_masked_tokens,all_synonsyms_tokens))
-            _,all_masked_tokens,all_synonsyms_tokens=list(zip(*zipped))
+            zipped = sorted(zip(masked_token_ids, all_masked_tokens, all_synonsyms_tokens))
+            _, all_masked_tokens, all_synonsyms_tokens = list(zip(*zipped))
 
             rewrite_content = ''.join(tokens)
             data_results.append({"id": id, "domain": domain, "content": raw_content, "rewrite_content": rewrite_content,
@@ -367,91 +337,94 @@ class CarRewriteSynonymsReplace(SimplexBaseModel):
         if data is None or len(data) == 0:
             return []
 
-        # num_mask = kwargs.get("num_mask", 5)
         data_results = []
-
-        batch_masked_tokens = []
-        batch_masked_token_ids = []
-        batch_tokens = []
-        batch_ids = []
-        batch_domains = []
-        batch_scontent = []  # 原始data里的content
-
-        batch_syn_model_data = []
 
         for idx, item in enumerate(data):
             id = item["id"]
             domain = item["domain"]
             raw_content = item["content"]
-            scontent=raw_content
-            if self.remove_colon:
-                scontent=re.sub(self.pattern,'',raw_content)
-            tokens = jieba.lcut(scontent)
+            scontent = raw_content
+            if self.change_position:
+                scontent = self.change_position_by_colon(scontent)
+            elif self.remove_colon:
+                scontent = re.sub(self.pattern, '', raw_content)
+
+            tokens=self.cut(scontent)
+
+            pos_list = list(self.postagger.postag(tokens))
             len_tokens = len(tokens)
-            num_mask = max(1, min(6, int(len_tokens * 0.3)))  ## 最小1，最大6
+            num_mask = max(1, min(15, int(len_tokens * 0.3)))  ## 最小1，最大6
 
             if len(tokens) < self.min_short_sen_length:
-                data_results.append({"id": id, "domain": domain, "content": raw_content, "rewrite_content": scontent, "masked_words": [], "replaced_words": []})
+                data_results.append({"id": id, "domain": domain, "content": raw_content,
+                                     "shuffled_content": scontent, "rewrite_content": scontent,
+                                     "masked_words": [], "replaced_words": []})
                 continue
 
-            content, masked_tokens, masked_token_ids = self.mask_sequence(copy.deepcopy(tokens), num_mask=num_mask,
-                                                                          have_masked_token_ids=[])
+            topk = kwargs.get('topk', 1)
+            rewrite_content, rewrite_tokens, masked_tokens_pos = self.mask_and_rewrite(copy.deepcopy(tokens),
+                                                                                       pos_list, num_mask=num_mask,
+                                                                                       topk=5
+                                                                                       )
+            rewrite_content = rewrite_content.replace(SPM_SPACE, ' ').strip()
 
-            if not masked_tokens:
-                data_results.append(
-                    {"id": id, "domain": domain, "content": raw_content, "rewrite_content": scontent, "masked_words": [],
-                     "replaced_words": []})
-                continue
-
-            batch_ids.append(id)
-            batch_domains.append(domain)
-            batch_scontent.append(raw_content)
-
-            batch_tokens.append(tokens)
-
-            batch_masked_tokens.append(masked_tokens)
-            batch_masked_token_ids.append(masked_token_ids)
-            batch_syn_model_data.append({"context": content, "maskwords": masked_tokens})
-
-        batch_results = self.synonyms_recom_model.predict({"data": batch_syn_model_data, "topk": 1})
-
-        for idx, results in enumerate(batch_results):
-            id = batch_ids[idx]
-            domain = batch_domains[idx]
-            raw_content = batch_scontent[idx]
-            masked_token_ids = batch_masked_token_ids[idx]
-            tokens = batch_tokens[idx]
-            masked_tokens = batch_masked_tokens[idx]
-
-            all_synonsyms_tokens = []
-            for i, result in enumerate(results):
-                synonym_token = result["candidates"][0]["word"]
-                # masked_token = result["maskword"]
-                masked_token_id = masked_token_ids[i]
-                tokens[masked_token_id] = synonym_token
-                all_synonsyms_tokens.append(synonym_token)
-
-            rewrite_content = ''.join(tokens)
-            data_results.append({"id": id, "domain": domain, "content": raw_content, "rewrite_content": rewrite_content,
-                            "masked_words": masked_tokens, "replaced_words": all_synonsyms_tokens})
+            data_results.append({"id": id, "domain": domain, "content": raw_content,
+                                 "shuffled_content": scontent, "rewrite_content": rewrite_content,
+                                 "rewrite_tokens": rewrite_tokens})
 
         return data_results
 
     def predict(self, data, **kwargs):
-        if self.all_mask:
-            return self.predict_all_mask(data,**kwargs)
 
-        return self.predict_one_mask(data,**kwargs)
+        return self.predict_all_mask(data, **kwargs)
 
+    def cut(self,content):
+        content=content.strip().replace(' ', SPECIAL_SPACE)
+        content=' '.join(jieba.cut(content))
+        tokens=self.spm_model.encode_as_pieces(content)
+        tokens=[n.replace(SPECIAL_SPACE,' ').replace(SPM_SPACE,'') for n in tokens]
+        tokens=[n for n in tokens if n]
+
+        return tokens
+
+    def change_position_by_colon(self, txt):
+        splited = re.split(self.pattern, txt)
+        splited = [s for s in splited if s.strip()]
+
+        if len(splited) < 2:
+            return splited[0]
+
+        return ' '.join([splited[-1]] + splited[:-1])
+
+    def get_w2v_candidates(self, word, topk=1):
+        # topn = 3 * topk
+        candidate_tokens = self.w2v_embedding_topk[word]
+        antonym = self.antonym_dict.get(word, set())
+        antonym |= self.forbidden_output
+        candidate_tokens = [candidate_token for candidate_token in candidate_tokens
+                            if candidate_token not in antonym and candidate_token.strip(SPM_SPACE) != word][:topk]
+
+        if candidate_tokens:
+            return candidate_tokens
+        else:
+            print("No available candidate for word '{}'".format(word))
+            return []
 
 
 class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
     """基于277个新标签集合训练得到的改写模型欧拉服务"""
+
     def __init__(self, *args, **kwargs):
         super(CarRewriteBaseKeywordsNewProcess, self).__init__(*args, **kwargs)
 
-        # self.multi_labels_cls_model = SimplexClient('BertCarMultiLabelsExtractTopKForRewrite', url="https://alpha-model-serving.aidigger.com/api/v1/car-multi-labels-extract/predict")  # 获取多标签
-        self.multi_labels_cls_model = SimplexClient('CarMultiLabelsExtract', url='https://model-serving.aidigger.com/api/v1/car-multi-labels-extract/predict')  # 获取多标签
+        self.multi_labels_cls_model = SimplexClient('CarMultiLabelsExtract',
+                                                    url='https://model-serving.aidigger.com/api/'
+                                                        'v1/car-multi-labels-extract/predict')  # 获取多标签
+
+        # transformer 生成模型
+        self.rewrite_url = 'https://alpha-car-rewrite-base-keywords-new-process-tf.aidigger.com/v1/' \
+                           'models/car-rewrite-base-keywords:predict'
+
         self.min_short_sen_length = kwargs.get("min_short_sen_length", 1)  # 最小序列长度
         self.max_sen_length = kwargs.get("max_sen_length", 100)  # 最大序列长度，超过进行分句
         self.timeout = kwargs.get("timeout", 30)
@@ -462,7 +435,8 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
         self.token2id = {line.strip(): idx for idx, line in enumerate(open(self.vocab_file, 'r').readlines())}
         self.eos_id = self.token2id['<eos>']
         self.sep_id = self.token2id['<sep>']
-        self.high_freq_tokens = [line.strip() for idx, line in enumerate(open(self.high_freq_token_file, 'r').readlines())]
+        self.high_freq_tokens = [line.strip() for idx, line in
+                                 enumerate(open(self.high_freq_token_file, 'r').readlines())]
         self.keywords = [line.strip() for idx, line in enumerate(open(self.keywords_file, 'r').readlines())]
         self.idf_scores_dict = json.load(open(self.idf_json_file, 'r'))
         self.num_unit_split_pattern = re.compile(r'[\d\.]+|[零一二两三四五六七八九十百千万]*')
@@ -613,7 +587,7 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
                           idx, tokens in enumerate(tokens_li)]
         }
 
-        ret = self._call_local_tf_service(tf_data, timeout=self.timeout).json()
+        ret = requests.post(self.rewrite_url, json=tf_data, timeout=self.timeout).json()
 
         # try:
         #     ret = self._call_local_tf_service(tf_data, timeout=self.timeout).json()
@@ -683,7 +657,10 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
 
             ## 保证tokens长度不超过max_sen_length
             # pieces_keywords = [self.process_line(piece_tokens[:self.max_sen_length], self.high_freq_tokens, self.num_unit_split_pattern) for piece_tokens in pieces_tokens]
-            pieces_keywords = [self.extract_line_keywords(piece_tokens[:self.max_sen_length], self.keywords, self.token2id, self.num_unit_split_pattern, self.idf_scores_dict) for piece_tokens in pieces_tokens]
+            pieces_keywords = [
+                self.extract_line_keywords(piece_tokens[:self.max_sen_length], self.keywords, self.token2id,
+                                           self.num_unit_split_pattern, self.idf_scores_dict) for piece_tokens in
+                pieces_tokens]
 
             # pieces_keywords_ids = [self.tokenize(piece_keywords) for piece_keywords in pieces_keywords]
 
@@ -700,8 +677,10 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
         # assert (len(data_pieces_lengths) == num_data)
         # assert (len(data_pieces_keywords_ids) == num_data)
 
-        all_multi_tags_results = self.multi_labels_cls_model.predict([{"content": content} for content in data_pieces_contents])
-        all_multi_tags = [['__'+t_result['tag']+'__' for t_result in pred_result['tags']] for pred_result in all_multi_tags_results]
+        all_multi_tags_results = self.multi_labels_cls_model.predict(
+            [{"content": content} for content in data_pieces_contents])
+        all_multi_tags = [['__' + t_result['tag'] + '__' for t_result in pred_result['tags']] for pred_result in
+                          all_multi_tags_results]
 
         ## 构建tf_serving数据格式
         data_tokens_li = []
@@ -716,7 +695,9 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             piece_len = data_pieces_lengths[i]
             piece_multi_tags = [multi_tags for multi_tags in all_multi_tags[prev_sum:prev_sum + piece_len]]
 
-            pieces_tokens_li = [domain + ' <sep> ' + ' '.join(piece_multi_tags[j]) + ' <sep> ' + ' '.join(pieces_keywords[j]) for j in range(piece_len)]
+            pieces_tokens_li = [
+                domain + ' <sep> ' + ' '.join(piece_multi_tags[j]) + ' <sep> ' + ' '.join(pieces_keywords[j]) for j in
+                range(piece_len)]
 
             data_tokens_li.extend(pieces_tokens_li)
             data_tokens_length.extend([len(piece_tokens.strip().split()) for piece_tokens in pieces_tokens_li])
@@ -741,7 +722,8 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             rewrite_results = [tmp_rewrite_str if '<unk>' not in tmp_rewrite_str else comments_pieces[idx] for
                                idx, tmp_rewrite_str in enumerate(rewrite_results)]
             rewrite_str += ' '.join(rewrite_results)
-            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'keywords': keywords})
+            results.append(
+                {'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'keywords': keywords})
 
         return results
 
@@ -787,12 +769,16 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             data_contents.append(comment)
 
             # data_keywords.append(self.process_line(tokens, self.high_freq_tokens, self.num_unit_split_pattern))
-            data_keywords.append(self.extract_line_keywords(tokens, self.keywords, self.token2id, self.num_unit_split_pattern, self.idf_scores_dict))
+            data_keywords.append(
+                self.extract_line_keywords(tokens, self.keywords, self.token2id, self.num_unit_split_pattern,
+                                           self.idf_scores_dict))
             data_domains.append(domain)
             data_ids.append(id)
 
-        all_multi_tags_results = self.multi_labels_cls_model.predict([{"content": content} for content in data_contents])
-        all_multi_tags = [['__' + t_result['tag'] + '__' for t_result in pred_result['tags']] for pred_result in all_multi_tags_results]
+        all_multi_tags_results = self.multi_labels_cls_model.predict(
+            [{"content": content} for content in data_contents])
+        all_multi_tags = [['__' + t_result['tag'] + '__' for t_result in pred_result['tags']] for pred_result in
+                          all_multi_tags_results]
 
         num_data = len(data_domains)
 
@@ -817,7 +803,8 @@ class CarRewriteBaseKeywordsNewProcess(SimplexBaseModel):
             domain = data_domains[i].strip('#')
             content = data_contents[i]
             rewrite_str = data_rewrite_results[i]
-            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'keywords': data_tokens_li[i]})
+            results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str,
+                            'keywords': data_tokens_li[i]})
 
             # results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str, 'jieba_cut': ' '.join(jieba.lcut(content)), 'keywords': data_tokens_li[i]})
 
@@ -830,11 +817,14 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
 
         self.senti_label_cls_model = SimplexClient('BertCarSentiCls')  # 获取情感标签模型
         self.timeout = kwargs.get("timeout", 60)
-        self.total_comments = [line.strip() for line in open(self.download(kwargs.get("total_comments_filepath"))).readlines()]
+        self.total_comments = [line.strip() for line in
+                               open(self.download(kwargs.get("total_comments_filepath"))).readlines()]
         self.vocab = set([line.strip() for line in open(self.download(kwargs.get("vocab_filepath"))).readlines()])
-        self.keywords_table = set([line.strip() for line in open(self.download(kwargs.get("keywords_filepath"))).readlines()])
+        self.keywords_table = set(
+            [line.strip() for line in open(self.download(kwargs.get("keywords_filepath"))).readlines()])
         self.car_info = set([line.strip() for line in open(self.download(kwargs.get("car_info_filepath"))).readlines()])
-        self.stop_words = set([line.strip() for line in open(self.download(kwargs.get("stop_words_filepath"))).readlines()])
+        self.stop_words = set(
+            [line.strip() for line in open(self.download(kwargs.get("stop_words_filepath"))).readlines()])
         self.vectorizer = TfidfVectorizer(stop_words=self.stop_words)
         self.idf_features = self.vectorizer.fit(self.total_comments)
         self.feature_words = numpy.array(self.vectorizer.get_feature_names())
@@ -845,7 +835,7 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             word = word.strip()
             if word == '':
                 continue
-            (b, e) = digits.match(word).span()
+            (b, e) = NUMBER_PATTERN.match(word).span()
             if e != 0 and word not in self.stop_words:
                 for d in word[:e]:
                     tokens.append(d)
@@ -865,7 +855,8 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         # }
         tf_data = {
             "signature_name": "serving_default",
-            "instances": [{"tokens": tokens.split()+['eos']*(max_len-lengths[idx]), "length": lengths[idx]} for idx, tokens in enumerate(tokens_li)]
+            "instances": [{"tokens": tokens.split() + ['eos'] * (max_len - lengths[idx]), "length": lengths[idx]} for
+                          idx, tokens in enumerate(tokens_li)]
         }
 
         # url = 'https://car-rewrite-base-keywords-tf.aidigger.com/v1/models/car-rewrite-base-keywords:predict'
@@ -881,14 +872,13 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
         # if ret is None:
         #     return ['']*len(lengths)
 
-        rewrite_results = [''.join(result['tokens'][0][:result['length'][0]-1]) for result in ret['predictions']]
+        rewrite_results = [''.join(result['tokens'][0][:result['length'][0] - 1]) for result in ret['predictions']]
 
         # ret_tokens = ret['predictions'][0]['tokens'][0]
         # ret_tokens_len = ret['predictions'][0]['length'][0] - 1
 
         # return ret_tokens[:ret_tokens_len]
         return rewrite_results
-
 
     def get_comments_pieces(self, comment):
         if len(comment.strip()) == 0:
@@ -923,7 +913,6 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
 
         return comment_pieces
 
-
     def get_comment_keywords(self, comment):
         key_words = []
         length = len(comment.split())
@@ -935,7 +924,8 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             for word in sent.split():
                 if word.strip() == '' or word not in self.vocab or word in self.stop_words:
                     continue
-                if word in self.keywords_table or partten.match(word) or word in self.car_info or word in cur_key:
+                if word in self.keywords_table or NUM_UNIT_PATTERN.match(
+                        word) or word in self.car_info or word in cur_key:
                     key_words.append(word)
                     flag = 1
             if flag == 0:
@@ -943,7 +933,6 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
                     if word in self.vocab:
                         key_words.append(word)
         return key_words
-
 
     def predict(self, data, **kwargs):
         '''
@@ -994,17 +983,18 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             data_keywords_li.append(keywords_li)
 
         ## get senti labels
-        all_senti_labels = self.senti_label_cls_model.predict([{'content':piece} for piece in data_pieces])
+        all_senti_labels = self.senti_label_cls_model.predict([{'content': piece} for piece in data_pieces])
         prev_sum = 0
         data_tokens_length = []
         for i in range(batch_size):
             data_len = data_pieces_lengths[i]
-            data_senti_labels = [senti_label['label'] for senti_label in all_senti_labels[prev_sum:prev_sum+data_len]]
+            data_senti_labels = [senti_label['label'] for senti_label in all_senti_labels[prev_sum:prev_sum + data_len]]
             prev_sum += data_len
             keywords_li = data_keywords_li[i]
             domain = data_domains[i]
 
-            tokens_li = [senti_label + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label in enumerate(data_senti_labels)]
+            tokens_li = [senti_label + ' ' + ' '.join(keywords_li[idx]) + ' ' + '<' + domain + '>' for idx, senti_label
+                         in enumerate(data_senti_labels)]
             data_tokens_li.extend(tokens_li)
             lengths = [len(tokens.strip().split()) for tokens in tokens_li]
             data_tokens_length.extend(lengths)
@@ -1019,10 +1009,11 @@ class CarRewriteBaseKeywords(SimplexBaseModel):
             domain = data_domains[i]
             content = data_contents[i]
             data_len = data_pieces_lengths[i]
-            rewrite_results = data_rewrite_results[prev_sum: prev_sum+data_len]
-            comments_pieces = data_pieces[prev_sum: prev_sum+data_len]
+            rewrite_results = data_rewrite_results[prev_sum: prev_sum + data_len]
+            comments_pieces = data_pieces[prev_sum: prev_sum + data_len]
             prev_sum += data_len
-            rewrite_results = [tmp_rewrite_str if '<unk>' not in tmp_rewrite_str else comments_pieces[idx]  for idx, tmp_rewrite_str in enumerate(rewrite_results)]
+            rewrite_results = [tmp_rewrite_str if '<unk>' not in tmp_rewrite_str else comments_pieces[idx] for
+                               idx, tmp_rewrite_str in enumerate(rewrite_results)]
             rewrite_str += ' '.join(rewrite_results)
             results.append({'id': id, 'domain': domain, 'content': content, 'rewrite_content': rewrite_str})
 

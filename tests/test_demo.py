@@ -23,11 +23,11 @@ class TestDemo(unittest.TestCase):
         # self.assertEqual(ret, 'hello')
 
     def test_car_rewrite_synonyms_replace(self):
-        # pos_model = '/data/share/liuchang/car_articles/pos.model'
-        # phrases_before_colon='/data/share/liuchang/car_rewirte_compare/remove_words'
+        pos_model = '/data/share/liuchang/car_articles/pos.model'
+        phrases_before_colon='/data/share/liuchang/car_rewirte_compare/remove_words'
 
-        pos_model = 'oss://modelzoo/dev/pos_model_for_car_rewrite/pos.model'
-        phrases_before_colon='oss://modelzoo/dev/car_rewrites/phrases_before_colon'
+        # pos_model = 'oss://modelzoo/dev/pos_model_for_car_rewrite/pos.model'
+        # phrases_before_colon='oss://modelzoo/dev/car_rewrites/phrases_before_colon'
 
         model = CarRewriteSynonymsReplace(pos_model_path=pos_model,all_mask=True,
                                           phrases_before_colon=phrases_before_colon)
